@@ -216,6 +216,15 @@ table.t td small{display:block;color:var(--muted);font-size:12px}
   .pb{page-break-after:always}
   @page{margin:12mm}
 }
+/* ---------- combobox & import ---------- */
+.cbp{position:fixed;z-index:300;background:#fff;border:1px solid #c9d2de;border-radius:8px;box-shadow:0 10px 30px rgba(15,30,51,.22);overflow:auto;padding:4px}
+.cbo{padding:7px 10px;border-radius:6px;cursor:pointer;display:flex;flex-direction:column;gap:1px}
+.cbo b{font-weight:500;font-size:13.5px}.cbo small{color:var(--muted);font-size:12px}
+.cbo.on,.cbo:hover{background:var(--acc-s)}
+.cbe{padding:10px;color:var(--muted);font-size:13px}
+.imp-notes{max-height:200px;overflow:auto;background:#f7f9fb;border:1px solid var(--line);border-radius:6px;padding:8px 12px;font-size:12.5px;margin:0;list-style:disc inside}
+.imp-notes li{margin:2px 0}
+table.t td.addr{min-width:220px;white-space:normal}
 </style>
 </head>
 <body>
@@ -272,6 +281,9 @@ const fmtMoney=n=>fmtNum(Math.round(+n||0));
 const uid=p=>p+'_'+Math.random().toString(36).slice(2,8)+Date.now().toString(36).slice(-4);
 const num=v=>{const n=parseFloat(String(v??'').replace(',','.'));return isNaN(n)?0:n};
 const strip=h=>{const d=document.createElement('div');d.innerHTML=String(h??'');return d.textContent.trim()};
+const norm=s=>String(s??'').normalize('NFD').replace(/[\u0300-\u036f]/g,'').replace(/đ/g,'d').replace(/Đ/g,'D').toLowerCase().replace(/\s+/g,' ').trim();
+const cell=v=>String(v??'').replace(/\s+/g,' ').trim();
+function numVN(v){if(typeof v==='number')return v;let s=String(v??'').replace(/\s/g,'');if(!s)return 0;if(/^\d{1,3}(\.\d{3})+(,\d+)?$/.test(s))s=s.replace(/\./g,'').replace(',','.');else s=s.replace(',','.');const n=parseFloat(s);return isNaN(n)?0:n}
 const slug=s=>String(s).normalize('NFD').replace(/[\u0300-\u036f]/g,'').replace(/đ/g,'d').replace(/Đ/g,'D').toLowerCase().replace(/[^a-z0-9]+/g,'-').replace(/^-|-$/g,'');
 function lastMonths(n){const o=[],d=new Date();for(let i=n-1;i>=0;i--){const x=new Date(d.getFullYear(),d.getMonth()-i,1);o.push(`${x.getFullYear()}-${pad(x.getMonth()+1)}`)}return o}
 const mLabel=mk=>`${mk.slice(5)}/${mk.slice(2,4)}`;
@@ -474,7 +486,7 @@ function slipHTML(kind,r){
    ===================================================================== */
 const ui={key:'',f:{},open:{},charts:[],cur:null};
 const PAGES={},ACT={},SUB={};
-let PAGE=null,S=null,T=null;
+let PAGE=null,S=null,T=null,IMP=null;
 const F=()=>(ui.f[ui.key]??={});
 const badge=(t,x)=>`<span class="bd ${t}">${esc(x)}</span>`;
 const PAL=['#e4570e','#0f1e33','#3b7dd8','#3f9a6b','#c9a227','#8a5bd1','#d6447a','#5f7387','#17a2b8','#9aa84a'];
@@ -487,7 +499,8 @@ const MENU=[
  {g:'out',icon:'📤',label:'Xuất kho',items:[['issues','Phiếu xuất'],['retail','Cấp phát cho khách lẻ'],['project','Cấp phát cho khách hàng/dự án'],['history','Lịch sử xuất']]},
  {g:'slip',icon:'📄',label:'Phiếu kho',items:[['in','Phiếu nhập kho'],['out','Phiếu xuất kho'],['pdf','Export PDF']]},
  {g:'rpt',icon:'📅',label:'Báo cáo',items:[['monthly','Theo tháng'],['project','Theo khách hàng/dự án'],['retail','Theo khách lẻ'],['category','Theo loại thiết bị'],['inout','Nhập / Xuất'],['stock','Tồn kho']]},
- {g:'set',icon:'⚙️',label:'Settings',items:[['retail','Khách lẻ'],['project','Khách hàng/dự án'],['supplier','Supplier'],['warehouse','Warehouse'],['category','Category'],['users','User / Permission'],['system','Sao lưu & Hệ thống']]}
+ {g:'info',icon:'🗂️',label:'Thông tin',items:[['retail','Khách lẻ'],['project','Khách hàng/dự án'],['supplier','Supplier'],['warehouse','Warehouse'],['category','Category']]},
+ {g:'set',icon:'⚙️',label:'Settings',items:[['users','User / Permission'],['system','Sao lưu & Hệ thống']]}
 ];
 const itItems=()=>[...db.categories.filter(c=>c.isIT).map(c=>[c.slug||c.id,c.name]),['history','Asset History']];
 
@@ -498,7 +511,7 @@ function modal(title,body,{footer='',size=''}={}){
   document.body.classList.add('noscroll');
   setTimeout(()=>$('#modal-root .mb input:not([type=checkbox]):not([type=hidden]):not([readonly]),#modal-root .mb select')?.focus(),40);
 }
-function closeModal(){const r=$('#modal-root');if(r)r.innerHTML='';document.body.classList.remove('noscroll');S=null;T=null}
+function closeModal(){const r=$('#modal-root');if(r)r.innerHTML='';document.body.classList.remove('noscroll');S=null;T=null;IMP=null}
 const done=msg=>{closeModal();rerender();toast(msg||'Đã lưu')};
 const cancelBtn=`<button class="btn" data-act="close">Hủy</button>`;
 
@@ -526,7 +539,7 @@ function refreshTbl(){destroyCharts();const t=$('#tbl');if(PAGE&&PAGE.tbl&&t){t.
 
 /* ---------- bảng ---------- */
 const nc=(h,fn,fmt=fmtNum)=>({h,c:'num',f:r=>fmt(fn(r)),x:fn});
-function table(cols,rows,{empty='Chưa có dữ liệu.',limit=400,foot=''}={}){
+function table(cols,rows,{empty='Chưa có dữ liệu.',limit=1000,foot=''}={}){
   ui.cur={cols,rows};
   if(!rows.length)return `<div class="empty">${empty}</div>`;
   const shown=rows.slice(0,limit);
@@ -648,7 +661,7 @@ SUB.chpw=form=>{
 /* ---------- điều phối sự kiện chung ---------- */
 document.addEventListener('click',e=>{const el=e.target.closest('[data-act]');if(!el)return;const fn=ACT[el.dataset.act];if(fn){fn(el,e)}});
 document.addEventListener('submit',e=>{const f=e.target.closest('form[data-submit]');if(!f)return;e.preventDefault();const fn=SUB[f.dataset.submit];if(fn)fn(f)});
-document.addEventListener('keydown',e=>{if(e.key==='Escape'&&$('#modal-root .ov'))closeModal()});
+document.addEventListener('keydown',e=>{if(e.key==='Escape'&&$('#modal-root .ov')){const cp=document.getElementById('cb-pop');if(cp&&!cp.hidden)return;closeModal()}});
 ACT.close=()=>closeModal();
 ACT.burger=()=>{$('#side')?.classList.toggle('open')};
 ACT.grp=el=>{const g=el.dataset.g,cur=ui.open[g]===undefined?ui.key.startsWith(g+'/'):ui.open[g];ui.open[g]=!cur;$('#side').innerHTML=sideHTML()};
@@ -789,7 +802,7 @@ function importItems(file){
 }
 
 PAGES['wh/stock']={t:'Tồn kho',
-  head(){return `<div class="bar">${fSearch('Tìm mã / tên hàng…')}${fSel('wh','Kho',whOpts())}${fSel('cat','Danh mục',catOpts())}${fSel('st','Trạng thái',[['','Mọi trạng thái'],['out','Hết hàng'],['low','Sắp hết'],['ok','Còn hàng']])}<div class="sp"></div><button class="btn" data-act="export" data-name="ton-kho">⬇ Excel</button></div>`},
+  head(){return `<div class="bar">${fSearch('Tìm mã / tên hàng…')}${fSel('wh','Kho',whOpts())}${fSel('cat','Danh mục',catOpts())}${fSel('st','Trạng thái',[['','Mọi trạng thái'],['out','Hết hàng'],['low','Sắp hết'],['ok','Còn hàng']])}<div class="sp"></div>${can('write')?'<button class="btn" data-act="up-stock">⬆ Upload file Tồn kho</button>':''}<button class="btn" data-act="export" data-name="ton-kho">⬇ Excel</button></div>`},
   tbl(){
     const f=F(),q=(f.q||'').toLowerCase(),m=stockMap(),map={bad:'out',warn:'low',ok:'ok'};
     const rows=db.items.filter(i=>{const t=qtyIn(m,i.id,f.wh);return(!f.cat||i.categoryId===f.cat)&&(!q||(i.sku+' '+i.name).toLowerCase().includes(q))&&(!f.st||map[itemStatus(i,t)[0]]===f.st)}).sort((a,b)=>a.sku.localeCompare(b.sku));
@@ -888,15 +901,14 @@ function slipOpen(kind,id,preset){
   if(kind==='receipt')S={kind,id:id||null,date:rec?.date||todayStr(),warehouseId:w0,supplierId:rec?.supplierId||'',ref:rec?.ref||'',note:rec?.note||'',
     lines:rec?rec.lines.map(l=>({itemId:l.itemId,itemText:'',qty:l.qty,price:l.price||0,serialsText:(l.serials||[]).join('\n'),warranty:l.warranty||'',assetIds:[]})):[newLine()]};
   else{const orig={};if(rec)rec.lines.forEach(l=>{orig[l.itemId]=(orig[l.itemId]||0)+(+l.qty||0)});
-    S={kind,id:id||null,date:rec?.date||todayStr(),warehouseId:w0,origWh:rec?.warehouseId||null,orig,targetType:rec?.targetType||preset||'retail',targetId:rec?.targetId||'',targetText:rec&&rec.targetType==='retail'?nm(db.retail,rec.targetId):'',receiver:rec?.receiver||'',note:rec?.note||'',
+    S={kind,id:id||null,date:rec?.date||todayStr(),warehouseId:w0,origWh:rec?.warehouseId||null,orig,targetType:rec?.targetType||preset||'retail',targetId:rec?.targetId||'',targetText:rec?targetLabel(rec.targetType,rec.targetId):'',receiver:rec?.receiver||'',note:rec?.note||'',
     lines:rec?rec.lines.map(l=>({itemId:l.itemId,itemText:'',qty:l.qty,price:0,serialsText:'',warranty:'',assetIds:[...(l.assetIds||[])]})):[newLine()]}}
   modal(`${id?'Sửa':'Tạo'} ${kind==='receipt'?'phiếu nhập kho':'phiếu xuất kho'}${rec?' – '+rec.code:''}`,slipBody(),{size:'wide',footer:cancelBtn+'<button class="btn primary" data-act="slip-save">💾 Lưu phiếu</button>'});
   renderLines();
 }
 function targetField(){
-  return S.targetType==='project'
-    ?`<label class="f"><span>Khách hàng / Dự án</span><select class="in" data-slip="targetId"><option value="">— chọn dự án —</option>${db.projects.map(p=>`<option value="${p.id}" ${p.id===S.targetId?'selected':''}>${esc(p.code+' – '+p.name)}</option>`).join('')}</select></label>`
-    :`<label class="f"><span>Khách lẻ (gõ tên; chưa có sẽ tự thêm)</span><input class="in" list="dl-retail" data-slip="targetText" value="${esc(S.targetText)}" placeholder="Tên người nhận / khách lẻ"></label>`;
+  const p=S.targetType==='project';
+  return `<label class="f"><span>${p?'Khách hàng / Dự án':'Khách lẻ'} <small class="muted">– bấm để chọn hoặc gõ tên</small></span><input class="in" data-slip="targetText" data-cb="${S.targetType}" autocomplete="off" value="${esc(S.targetText)}" placeholder="${p?'Gõ mã / tên khách hàng để tìm…':'Gõ tên khách lẻ (chưa có sẽ tự thêm)'}"></label>`;
 }
 function slipBody(){
   const isR=S.kind==='receipt';
@@ -906,7 +918,6 @@ function slipBody(){
     ?`${date}${wh}<label class="f"><span>Nhà cung cấp</span><select class="in" data-slip="supplierId"><option value="">— Không có / tồn đầu kỳ —</option>${db.suppliers.map(s=>`<option value="${s.id}" ${s.id===S.supplierId?'selected':''}>${esc(s.name)}</option>`).join('')}</select></label><label class="f"><span>Số chứng từ / hóa đơn</span><input class="in" data-slip="ref" value="${esc(S.ref)}"></label>`
     :`${date}${wh}<label class="f"><span>Đối tượng nhận</span><select class="in" data-slip="targetType"><option value="retail" ${S.targetType==='retail'?'selected':''}>Khách lẻ</option><option value="project" ${S.targetType==='project'?'selected':''}>Khách hàng / Dự án</option></select></label><div id="tgt" class="contents">${targetField()}</div><label class="f"><span>Người nhận hàng</span><input class="in" data-slip="receiver" value="${esc(S.receiver)}"></label>`;
   return `<div class="fg3">${head}<label class="f full"><span>${isR?'Ghi chú':'Mục đích / Ghi chú'}</span><input class="in" data-slip="note" value="${esc(S.note)}"></label></div>
-  <datalist id="dl-items">${db.items.map(i=>`<option value="${esc(itemLabel(i))}">`).join('')}</datalist>${isR?'':`<datalist id="dl-retail">${db.retail.map(c=>`<option value="${esc(c.name)}">`).join('')}</datalist>`}
   <div class="lh"><b>Danh sách hàng hóa</b><button type="button" class="btn sm" data-act="ln-add">＋ Thêm dòng</button></div><div id="lines"></div><div class="tot" id="tot"></div>`;
 }
 function availOf(l){const it=itemOf(l.itemId);if(!it)return 0;let a=stockMap()[it.id]?.[S.warehouseId]||0;if(S.id&&S.kind==='issue'&&S.origWh===S.warehouseId)a+=S.orig[it.id]||0;return a}
@@ -915,7 +926,7 @@ function renderLines(){
   $('#lines').innerHTML=S.lines.map((l,i)=>{
     const it=itemOf(l.itemId),isIT=!!(it&&catOf(it.categoryId)?.isIT),tracked=isR?serialsOf(l).length>0:l.assetIds.length>0;
     let avail=0;if(it&&!isR){avail=m[it.id]?.[S.warehouseId]||0;if(S.id&&S.origWh===S.warehouseId)avail+=S.orig[it.id]||0}
-    const item=`<input class="in itm" list="dl-items" placeholder="Gõ mã hoặc tên hàng…" value="${esc(it?itemLabel(it):l.itemText||'')}" data-l="${i}:itemText" aria-label="Hàng hóa">`;
+    const item=`<input class="in itm" data-cb="item" data-idx="${i}" autocomplete="off" placeholder="Bấm để chọn hoặc gõ mã / tên hàng…" value="${esc(it?itemLabel(it):l.itemText||'')}" data-l="${i}:itemText" aria-label="Hàng hóa">`;
     const qty=`<input class="in" type="number" min="0" step="any" value="${l.qty}" data-l="${i}:qty" ${tracked?'readonly':''} aria-label="Số lượng">`;
     const del=`<button type="button" class="btn sm danger" data-act="ln-del" data-i="${i}" aria-label="Xoá dòng">✕</button>`;
     const main=isR
@@ -1022,12 +1033,13 @@ function saveReceipt(){
 function saveIssue(){
   if(!S.warehouseId||!S.date)return toast('Chọn ngày và kho.','error');
   const tText=(S.targetText||'').trim();
-  if(S.targetType==='retail'&&!tText)return toast('Nhập tên khách lẻ.','error');
-  if(S.targetType==='project'&&!S.targetId)return toast('Chọn khách hàng / dự án.','error');
+  if(!tText)return toast(S.targetType==='project'?'Chọn khách hàng / dự án.':'Nhập tên khách lẻ.','error');
+  let proj=null;
+  if(S.targetType==='project'){proj=resolveProject(tText);if(!proj)return toast('Không tìm thấy khách hàng / dự án này trong danh mục. Hãy chọn từ danh sách gợi ý, hoặc thêm mới ở Thông tin → Khách hàng/dự án.','error')}
   const lines=collectLines();if(!lines)return;
   if(transact(()=>{
-    let tid=S.targetId;
-    if(S.targetType==='retail'){let c=db.retail.find(x=>x.name.toLowerCase()===tText.toLowerCase());if(!c){c={id:uid('rt'),name:tText,phone:'',dept:'',note:''};db.retail.push(c)}tid=c.id}
+    let tid=proj?proj.id:'';
+    if(S.targetType==='retail'){let c=db.retail.find(x=>norm(x.name)===norm(tText));if(!c){c={id:uid('rt'),name:tText,phone:'',dept:'',note:''};db.retail.push(c)}tid=c.id}
     const data={date:S.date,warehouseId:S.warehouseId,targetType:S.targetType,targetId:tid,receiver:S.receiver,note:S.note,lines};
     const r=S.id?by(db.issues,S.id):null;
     if(r){revertIssueAssets(r);Object.assign(r,data);applyIssueAssets(r)}else _newIssue(data);
@@ -1242,23 +1254,34 @@ PAGES['rpt/stock']={t:'Báo cáo tồn kho',
 /* =====================================================================
    SETTINGS
    ===================================================================== */
+const nIss=(type,id)=>db.issues.filter(i=>i.targetType===type&&i.targetId===id);
 const CRUD={
-  supplier:{col:'suppliers',pre:'s',t:'Nhà cung cấp',fields:[['name','Tên nhà cung cấp',1],['contact','Người liên hệ'],['phone','Điện thoại'],['email','Email'],['address','Địa chỉ']],used:id=>db.receipts.some(r=>r.supplierId===id)},
-  retail:{col:'retail',pre:'rt',t:'Khách lẻ',fields:[['name','Tên khách lẻ',1],['phone','Điện thoại'],['dept','Phòng ban / đơn vị'],['note','Ghi chú']],used:id=>db.issues.some(i=>i.targetType==='retail'&&i.targetId===id)||db.assets.some(a=>a.holder&&a.holder.type==='retail'&&a.holder.id===id)},
-  project:{col:'projects',pre:'p',t:'Khách hàng / Dự án',fields:[['code','Mã dự án',1],['name','Tên dự án',1],['customer','Khách hàng'],['contact','Người liên hệ'],['note','Ghi chú']],unique:'code',used:id=>db.issues.some(i=>i.targetType==='project'&&i.targetId===id)||db.assets.some(a=>a.holder&&a.holder.type==='project'&&a.holder.id===id)},
-  warehouse:{col:'warehouses',pre:'w',t:'Kho',admin:1,fields:[['name','Tên kho',1],['location','Vị trí / địa chỉ'],['keeper','Thủ kho']],used:id=>db.receipts.some(r=>r.warehouseId===id)||db.issues.some(r=>r.warehouseId===id)||db.stocktakes.some(r=>r.warehouseId===id)||db.adjustments.some(r=>r.warehouseId===id)||db.assets.some(a=>a.warehouseId===id)},
-  category:{col:'categories',pre:'c',t:'Danh mục',admin:1,fields:[['name','Tên danh mục',1]],flags:[['isIT','Thuộc nhóm IT Asset (quản lý theo Serial, có mục riêng trên menu)']],used:id=>db.items.some(i=>i.categoryId===id)}
+  supplier:{col:'suppliers',pre:'s',t:'Nhà cung cấp',fields:[['code','Mã NCC'],['name','Tên nhà cung cấp',1],['contact','Người liên hệ'],['phone','Điện thoại'],['email','Email'],['address','Địa chỉ']],unique:'code',upload:['up-ncc','Upload file NCC'],
+    extra:()=>[nc('Số phiếu nhập',r=>db.receipts.filter(x=>x.supplierId===r.id).length)],
+    used:id=>db.receipts.some(r=>r.supplierId===id)},
+  retail:{col:'retail',pre:'rt',t:'Khách lẻ',fields:[['name','Tên khách lẻ',1],['phone','Điện thoại'],['dept','Phòng ban / đơn vị'],['note','Ghi chú']],
+    extra:()=>[nc('Số phiếu xuất',r=>nIss('retail',r.id).length),nc('Thiết bị đang giữ',r=>db.assets.filter(a=>a.status==='assigned'&&a.holder&&a.holder.type==='retail'&&a.holder.id===r.id).length)],
+    used:id=>db.issues.some(i=>i.targetType==='retail'&&i.targetId===id)||db.assets.some(a=>a.holder&&a.holder.type==='retail'&&a.holder.id===id)},
+  project:{col:'projects',pre:'p',t:'Khách hàng / Dự án',fields:[['code','Mã KH / dự án',1],['name','Tên khách hàng / dự án',1],['taxId','Mã số thuế'],['address','Địa chỉ'],['customer','Khách hàng'],['contact','Người liên hệ'],['note','Ghi chú']],unique:'code',upload:['up-kh','Upload file Khách hàng'],
+    extra:()=>[nc('Số phiếu xuất',r=>nIss('project',r.id).length),nc('Thiết bị đang giữ',r=>db.assets.filter(a=>a.status==='assigned'&&a.holder&&a.holder.type==='project'&&a.holder.id===r.id).length)],
+    used:id=>db.issues.some(i=>i.targetType==='project'&&i.targetId===id)||db.assets.some(a=>a.holder&&a.holder.type==='project'&&a.holder.id===id)},
+  warehouse:{col:'warehouses',pre:'w',t:'Kho',admin:1,fields:[['name','Tên kho',1],['location','Vị trí / địa chỉ'],['keeper','Thủ kho']],
+    extra:()=>{const m=stockMap();return[nc('Số mã có tồn',r=>db.items.filter(i=>(m[i.id]?.[r.id]||0)>0).length),nc('Phiếu nhập',r=>db.receipts.filter(x=>x.warehouseId===r.id).length),nc('Phiếu xuất',r=>db.issues.filter(x=>x.warehouseId===r.id).length)]},
+    used:id=>db.receipts.some(r=>r.warehouseId===id)||db.issues.some(r=>r.warehouseId===id)||db.stocktakes.some(r=>r.warehouseId===id)||db.adjustments.some(r=>r.warehouseId===id)||db.assets.some(a=>a.warehouseId===id)},
+  category:{col:'categories',pre:'c',t:'Danh mục',admin:1,fields:[['name','Tên danh mục',1]],flags:[['isIT','Thuộc nhóm IT Asset (quản lý theo Serial, có mục riêng trên menu)']],
+    extra:()=>[nc('Số mã hàng',r=>db.items.filter(i=>i.categoryId===r.id).length)],
+    used:id=>db.items.some(i=>i.categoryId===id)}
 };
 function crudPage(key){
   const C=CRUD[key],canEdit=()=>C.admin?can('admin'):can('write');
   return{t:C.t,
-    head(){return `<div class="bar">${fSearch('Tìm kiếm…')}<div class="sp"></div><button class="btn" data-act="export" data-name="${slug(C.t)}">⬇ Excel</button>${canEdit()?`<button class="btn acc" data-act="crud-new" data-key="${key}">＋ Thêm ${C.t.toLowerCase()}</button>`:''}</div>`},
+    head(){return `<div class="bar">${fSearch('Tìm kiếm…')}<div class="sp"></div>${C.upload&&canEdit()?`<button class="btn" data-act="${C.upload[0]}">⬆ ${C.upload[1]}</button>`:''}<button class="btn" data-act="export" data-name="${slug(C.t)}">⬇ Excel</button>${canEdit()?`<button class="btn acc" data-act="crud-new" data-key="${key}">＋ Thêm ${C.t.toLowerCase()}</button>`:''}</div>`},
     tbl(){
       const q=(F().q||'').toLowerCase(),rows=db[C.col].filter(r=>!q||Object.values(r).join(' ').toLowerCase().includes(q));
-      return table([...C.fields.map(([k,l])=>({h:l,f:r=>esc(r[k]||'')})),...(C.flags||[]).map(([k])=>({h:'Nhóm IT',f:r=>r[k]?badge('info','IT Asset'):'<span class="muted">—</span>',x:r=>r[k]?'IT':''})),actCol(r=>canEdit()?`<button class="btn sm" data-act="crud-edit" data-key="${key}" data-id="${r.id}">Sửa</button> <button class="btn sm danger" data-act="crud-del" data-key="${key}" data-id="${r.id}">Xoá</button>`:'')],rows,{empty:'Chưa có dữ liệu.'});
+      return table([...C.fields.map(([k,l])=>({h:l,c:k==='address'?'addr':'',f:r=>esc(r[k]||'')})),...(C.extra?C.extra():[]),...(C.flags||[]).map(([k])=>({h:'Nhóm IT',f:r=>r[k]?badge('info','IT Asset'):'<span class="muted">—</span>',x:r=>r[k]?'IT':''})),actCol(r=>canEdit()?`<button class="btn sm" data-act="crud-edit" data-key="${key}" data-id="${r.id}">Sửa</button> <button class="btn sm danger" data-act="crud-del" data-key="${key}" data-id="${r.id}">Xoá</button>`:'')],rows,{empty:'Chưa có dữ liệu.'});
     }};
 }
-Object.keys(CRUD).forEach(k=>{PAGES['set/'+k]=crudPage(k)});PAGES['in/suppliers']=crudPage('supplier');
+Object.keys(CRUD).forEach(k=>{PAGES['info/'+k]=crudPage(k)});PAGES['in/suppliers']=crudPage('supplier');
 function crudForm(key,id){
   const C=CRUD[key],o=id?by(db[C.col],id):{};
   modal((id?'Sửa ':'Thêm ')+C.t.toLowerCase(),`<form id="mf" data-submit="crud-save" data-key="${key}" data-id="${id||''}"><div class="fg">${C.fields.map(([k,l,req])=>inp(k,l,o[k]||'',{req,full:['address','note'].includes(k)})).join('')}${(C.flags||[]).map(([k,l])=>chk(k,l,o[k])).join('')}</div></form>`,{footer:cancelBtn+`<button class="btn primary" form="mf">Lưu</button>`});
@@ -1267,7 +1290,7 @@ ACT['crud-new']=el=>crudForm(el.dataset.key);ACT['crud-edit']=el=>crudForm(el.da
 SUB['crud-save']=form=>{
   const key=form.dataset.key,C=CRUD[key],id=form.dataset.id,d=fd(form),rec={};
   C.fields.forEach(([k])=>rec[k]=(d[k]||'').trim());(C.flags||[]).forEach(([k])=>rec[k]=!!d[k]);
-  if(C.unique&&db[C.col].some(x=>x.id!==id&&String(x[C.unique]).toLowerCase()===rec[C.unique].toLowerCase()))return toast(`${C.fields.find(f=>f[0]===C.unique)[1]} đã tồn tại.`,'error');
+  if(C.unique&&rec[C.unique]&&db[C.col].some(x=>x.id!==id&&String(x[C.unique]||'').toLowerCase()===rec[C.unique].toLowerCase()))return toast(`${C.fields.find(f=>f[0]===C.unique)[1]} đã tồn tại.`,'error');
   if(transact(()=>{let o=id?by(db[C.col],id):null;if(!o){o={id:uid(C.pre)};db[C.col].push(o)}Object.assign(o,rec);if(key==='category'){if(o.isIT&&!o.slug)o.slug=o.id}}))done();
 };
 ACT['crud-del']=el=>{
@@ -1367,6 +1390,213 @@ function loadSample(){
 /* =====================================================================
    KHỞI ĐỘNG
    ===================================================================== */
+
+/* =====================================================================
+   COMBOBOX: bấm là sổ danh sách, gõ để lọc (không phân biệt dấu)
+   ===================================================================== */
+let cbState=null;
+function cbPop(){let p=document.getElementById('cb-pop');if(!p){p=document.createElement('div');p.id='cb-pop';p.className='cbp';p.hidden=true;document.body.appendChild(p)}return p}
+function cbOptions(kind){
+  if(kind==='retail')return db.retail.map(c=>({id:c.id,label:c.name,sub:[c.dept,c.phone].filter(Boolean).join(' · '),key:norm(c.name+' '+(c.dept||''))}));
+  if(kind==='project')return db.projects.map(p=>({id:p.id,label:`${p.code} – ${p.name}`,sub:[p.taxId?'MST '+p.taxId:'',p.address].filter(Boolean).join(' · '),key:norm(p.code+' '+p.name+' '+(p.taxId||''))}));
+  if(kind==='item'){const m=stockMap();return db.items.map(i=>({id:i.id,label:itemLabel(i),sub:`Tồn ${fmtNum(totalOf(m,i.id))} ${i.unit}`,key:norm(i.sku+' '+i.name)}))}
+  return[];
+}
+function cbOpen(el){
+  const kind=el.dataset.cb,all=cbOptions(kind);
+  cbState={el,kind,all,list:[],idx:0,showAll:all.some(o=>o.label===el.value)};
+  cbFilter();
+}
+function cbFilter(){
+  const s=cbState;if(!s)return;
+  const toks=s.showAll?[]:norm(s.el.value).split(' ').filter(Boolean);
+  s.list=s.all.filter(o=>toks.every(t=>o.key.includes(t))).slice(0,80);
+  s.idx=s.list.length?0:-1;cbRender();
+}
+function cbRender(){
+  const s=cbState,p=cbPop();if(!s)return;
+  p.innerHTML=s.list.length?s.list.map((o,i)=>`<div class="cbo ${i===s.idx?'on':''}" data-cbi="${i}"><b>${esc(o.label)}</b>${o.sub?`<small>${esc(o.sub)}</small>`:''}</div>`).join(''):`<div class="cbe">Không có kết quả${s.kind==='retail'&&s.el.value.trim()?` – sẽ thêm “${esc(s.el.value.trim())}” làm khách lẻ mới khi lưu phiếu`:s.kind==='project'?'. Thêm mới ở Thông tin → Khách hàng/dự án':''}</div>`;
+  const r=s.el.getBoundingClientRect(),below=window.innerHeight-r.bottom-10,up=below<170&&r.top>below;
+  p.style.left=Math.max(6,Math.min(r.left,window.innerWidth-Math.max(r.width,320)-6))+'px';p.style.width=Math.max(r.width,320)+'px';
+  if(up){p.style.top='auto';p.style.bottom=(window.innerHeight-r.top+2)+'px';p.style.maxHeight=Math.min(300,r.top-12)+'px'}
+  else{p.style.bottom='auto';p.style.top=(r.bottom+2)+'px';p.style.maxHeight=Math.min(300,below)+'px'}
+  p.hidden=false;
+  const on=p.querySelector('.cbo.on');if(on&&on.scrollIntoView)on.scrollIntoView({block:'nearest'});
+}
+function cbClose(){cbState=null;const p=document.getElementById('cb-pop');if(p)p.hidden=true}
+function cbPick(i){
+  const s=cbState;if(!s)return;const o=s.list[i];if(!o)return;const el=s.el;
+  el.value=o.label;cbClose();
+  if(s.kind==='item'){const it=itemOf(o.id);if(it&&S)pickItem(+el.dataset.idx,it)}
+  else if(S){S.targetText=o.label;S.targetId=o.id}
+}
+document.addEventListener('focusin',e=>{const el=e.target;if(el.dataset&&el.dataset.cb&&!(cbState&&cbState.el===el))cbOpen(el)});
+document.addEventListener('click',e=>{const el=e.target;if(el.dataset&&el.dataset.cb&&!cbState)cbOpen(el)});
+document.addEventListener('input',e=>{if(cbState&&e.target===cbState.el){cbState.showAll=false;cbFilter()}});
+document.addEventListener('keydown',e=>{
+  const s=cbState;if(!s)return;
+  if(e.key==='ArrowDown'){e.preventDefault();if(s.list.length){s.idx=(s.idx+1)%s.list.length;cbRender()}}
+  else if(e.key==='ArrowUp'){e.preventDefault();if(s.list.length){s.idx=(s.idx-1+s.list.length)%s.list.length;cbRender()}}
+  else if(e.key==='Enter'){if(s.idx>=0){e.preventDefault();cbPick(s.idx)}}
+  else if(e.key==='Escape'){e.preventDefault();cbClose()}
+  else if(e.key==='Tab'){cbClose()}
+});
+document.addEventListener('mousedown',e=>{
+  const o=e.target.closest&&e.target.closest('.cbo');
+  if(o){e.preventDefault();cbPick(+o.dataset.cbi);return}
+  if(cbState&&e.target!==cbState.el&&!(e.target.closest&&e.target.closest('#cb-pop')))cbClose();
+});
+document.addEventListener('scroll',e=>{if(cbState&&!(e.target.closest&&e.target.closest('#cb-pop')))cbClose()},true);
+window.addEventListener('resize',cbClose);
+
+/* Tìm dự án từ chữ đã gõ: nhãn đầy đủ / mã / tên (duy nhất) */
+function resolveProject(t){
+  const n=norm(t);if(!n)return null;
+  const x=db.projects.find(p=>norm(`${p.code} – ${p.name}`)===n||norm(p.code)===n);if(x)return x;
+  const c=db.projects.filter(p=>norm(p.name)===n);return c.length===1?c[0]:null;
+}
+
+/* =====================================================================
+   NHẬP DỮ LIỆU TỪ EXCEL (NCC / Khách hàng / Tồn kho)
+   Quy tắc: trùng khoá (mã / SKU, hoặc tên nếu không có mã) → GHI ĐÈ bản ghi cũ
+   (giữ nguyên id nên các phiếu, thiết bị đã liên kết không bị mất liên kết).
+   ===================================================================== */
+const SPECS={
+  ncc:{title:'Upload file nhà cung cấp',need:{name:'Tên NCC'},fields:{code:['ma ncc','ma nha cung cap','ma'],name:['ten ncc','ten nha cung cap','ten'],address:['dia chi'],phone:['dien thoai','sdt','so dien thoai'],email:['email'],contact:['nguoi lien he','lien he']},apply:applySuppliers},
+  kh:{title:'Upload file khách hàng',need:{name:'Tên KH'},fields:{code:['ma kh','ma khach hang','ma'],name:['ten kh','ten khach hang','ten'],tax:['mst','ma so thue'],address:['dia chi'],phone:['dien thoai','sdt'],contact:['nguoi lien he','lien he']},apply:applyCustomers},
+  stock:{title:'Upload file số lượng tồn kho',need:{sku:'SKU',name:'Tên hàng'},warehouse:true,fields:{sku:['sku','ma hang','ma'],name:['ten hang','ten hang hoa','ten'],cat:['danh muc','nhom','loai'],unit:['dvt','don vi','don vi tinh'],qty:['ton kho','so luong','ton','sl'],price:['don gia','gia']},apply:applyStock}
+};
+function readSheet(file){
+  return new Promise((res,rej)=>{
+    if(!window.XLSX)return rej(new Error('Chưa tải được thư viện Excel (SheetJS). Kiểm tra kết nối mạng.'));
+    const rd=new FileReader();
+    rd.onload=()=>{try{const wb=XLSX.read(new Uint8Array(rd.result),{type:'array'});let rows=[];for(const n of wb.SheetNames){const r=XLSX.utils.sheet_to_json(wb.Sheets[n],{defval:'',raw:true});if(r.length){rows=r;break}}res(rows)}catch(e){rej(e)}};
+    rd.onerror=()=>rej(new Error('Không đọc được file.'));rd.readAsArrayBuffer(file);
+  });
+}
+function mapRows(raw,spec){
+  if(!raw.length)return{error:'File không có dữ liệu.'};
+  const keys=Object.keys(raw[0]),col={};
+  for(const f in spec.fields){const k=keys.find(k=>spec.fields[f].includes(norm(k)));if(k!==undefined)col[f]=k}
+  const miss=Object.keys(spec.need).filter(f=>!col[f]);
+  if(miss.length)return{error:`Thiếu cột: ${miss.map(f=>spec.need[f]).join(', ')}. Các cột tìm thấy trong file: ${keys.slice(0,8).join(', ')}`};
+  return{rows:raw.map(r=>{const o={};for(const f in col)o[f]=r[col[f]];return o})};
+}
+function dryRun(fn){const snap=JSON.stringify(db);try{return fn()}finally{db=JSON.parse(snap)}}
+const pickFile=cb=>{const i=document.createElement('input');i.type='file';i.accept='.xlsx,.xls,.csv';i.onchange=()=>{if(i.files[0])cb(i.files[0])};i.click()};
+async function startImport(kind,file){
+  const spec=SPECS[kind];
+  try{
+    const m=mapRows(await readSheet(file),spec);if(m.error)return toast(m.error,'error');
+    IMP={kind,file:file.name,rows:m.rows,wh:db.warehouses[0]?.id||'',spec};
+    modal(spec.title,`<p class="note">File: <b>${esc(file.name)}</b> · ${fmtNum(m.rows.length)} dòng dữ liệu</p><div id="imp"></div>`,{size:'mid',footer:cancelBtn+'<button class="btn acc" data-act="imp-ok">Xác nhận nhập</button>'});
+    renderImp();
+  }catch(e){toast('Không đọc được file: '+e.message,'error')}
+}
+function renderImp(){
+  if(!IMP)return;
+  const box=$('#imp');if(!box)return;
+  let rep;
+  try{rep=dryRun(()=>IMP.spec.apply(IMP.rows,IMP.wh,IMP.file))}
+  catch(e){box.innerHTML=`<div class="empty">${esc(e.message)}</div>`;IMP.err=true;return}
+  IMP.err=false;
+  const map=Object.values(rep.map||{});
+  box.innerHTML=`${IMP.spec.warehouse?`<div class="fg" style="margin-bottom:12px"><label class="f"><span>Cập nhật tồn cho kho</span><select class="in" data-impwh>${db.warehouses.map(w=>`<option value="${w.id}" ${w.id===IMP.wh?'selected':''}>${esc(w.name)}</option>`).join('')}</select></label></div>`:''}
+  <div class="kpis sm">${kpi('Thêm mới',fmtNum(rep.add),'','ok')}${kpi('Ghi đè (có thay đổi)',fmtNum(rep.upd),'','warn')}${kpi('Giống hệt, không đổi',fmtNum(rep.same))}${(rep.extra||[]).map(([l,v])=>kpi(l,fmtNum(v),'','info')).join('')}</div>
+  <p class="note">Bản ghi trùng ${IMP.kind==='stock'?'SKU':'mã (hoặc tên nếu không có mã)'} với dữ liệu đang có sẽ được <b>ghi đè</b>; bản ghi chưa có sẽ được thêm mới. Dữ liệu có sẵn mà không nằm trong file được giữ nguyên.${IMP.kind==='stock'?' Tồn kho của từng mặt hàng ở kho đã chọn sẽ được đặt bằng số lượng trong file (ghi thành một phiếu kiểm kê để truy vết).':''}</p>
+  ${map.length?`<details><summary class="note">Danh mục được gộp vào danh mục có sẵn (${map.length})</summary><ul class="imp-notes">${map.map(x=>`<li>${esc(x.from)} → <b>${esc(x.to)}</b> (${x.n} mã)</li>`).join('')}</ul></details>`:''}
+  ${rep.notes.length?`<details open><summary class="note"><b>Cần lưu ý (${rep.notes.length})</b></summary><ul class="imp-notes">${rep.notes.map(n=>`<li>${esc(n)}</li>`).join('')}</ul></details>`:''}`;
+}
+document.addEventListener('change',e=>{if(IMP&&e.target.dataset&&e.target.dataset.impwh!==undefined){IMP.wh=e.target.value;renderImp()}});
+ACT['imp-ok']=()=>{
+  if(!IMP||IMP.err)return;let rep;
+  const ok=transact(()=>{rep=IMP.spec.apply(IMP.rows,IMP.wh,IMP.file)});
+  if(ok)done(`Đã nhập ${IMP.file}: thêm ${rep.add}, ghi đè ${rep.upd}, không đổi ${rep.same}`);
+};
+ACT['up-ncc']=()=>pickFile(f=>startImport('ncc',f));
+ACT['up-kh']=()=>pickFile(f=>startImport('kh',f));
+ACT['up-stock']=()=>{if(!db.warehouses.length)return toast('Chưa có kho. Hãy thêm kho ở Thông tin → Warehouse.','warn');pickFile(f=>startImport('stock',f))};
+
+/* Mã trùng trong cùng file: cùng tên → dòng sau ghi đè; khác tên → tách thành bản ghi riêng (đổi hậu tố -2, -3…) */
+function dedupCode(code,nn,seen,row,rep){
+  let key=norm(code);if(!key)return code;
+  const prev=seen.get(key);
+  if(prev&&prev.nn!==nn){
+    let k=2,c2;do{c2=`${code}-${k++}`}while(seen.has(norm(c2)));
+    rep.notes.push(`Dòng ${row}: mã "${code}" bị trùng với một đơn vị KHÁC (dòng ${prev.row}) → giữ cả hai, đổi mã dòng này thành "${c2}"`);
+    code=c2;key=norm(c2);
+  }else if(prev){rep.notes.push(`Dòng ${row}: mã "${code}" lặp lại cùng tên với dòng ${prev.row} → dòng sau ghi đè dòng trước`)}
+  seen.set(key,{nn,row});return code;
+}
+function assignFields(ex,data){const before=JSON.stringify(ex);for(const k in data){if(data[k]!==''&&data[k]!==undefined)ex[k]=data[k]}return JSON.stringify(ex)!==before}
+
+function applySuppliers(rows){
+  const rep={add:0,upd:0,same:0,notes:[],extra:[]},seen=new Map();
+  rows.forEach((r,ix)=>{
+    const row=ix+2,name=cell(r.name);
+    if(!name){if(cell(r.code)||cell(r.address))rep.notes.push(`Dòng ${row}: thiếu tên NCC → bỏ qua`);return}
+    const nn=norm(name),code=dedupCode(cell(r.code),nn,seen,row,rep),key=norm(code);
+    const ex=(key&&db.suppliers.find(s=>norm(s.code)===key))||db.suppliers.find(s=>norm(s.name)===nn);
+    const data={code,name,address:cell(r.address),phone:cell(r.phone),email:cell(r.email),contact:cell(r.contact)};
+    if(ex){assignFields(ex,data)?rep.upd++:rep.same++}
+    else{db.suppliers.push({id:uid('s'),code:'',contact:'',phone:'',email:'',address:'',...data});rep.add++}
+  });
+  return rep;
+}
+function applyCustomers(rows){
+  const rep={add:0,upd:0,same:0,notes:[],extra:[]},seen=new Map();let fixedTax=0;
+  const nextCode=()=>{let n=db.projects.length+1,c;do{c='KH-'+String(n++).padStart(4,'0')}while(db.projects.some(p=>norm(p.code)===norm(c)));return c};
+  rows.forEach((r,ix)=>{
+    const row=ix+2,name=cell(r.name);
+    if(!name){if(cell(r.code)||cell(r.address))rep.notes.push(`Dòng ${row}: thiếu tên khách hàng → bỏ qua`);return}
+    const nn=norm(name);let code=cell(r.code);
+    code=code?dedupCode(code,nn,seen,row,rep):nextCode();
+    const key=norm(code);
+    let tax=r.tax;
+    if(typeof tax==='number'){tax=String(Math.round(tax));if(tax.length===9){tax='0'+tax;fixedTax++}}else tax=cell(tax);
+    const ex=db.projects.find(p=>norm(p.code)===key)||db.projects.find(p=>norm(p.name)===nn);
+    const data={code,name,taxId:tax,address:cell(r.address),contact:cell(r.contact)};
+    if(ex){assignFields(ex,data)?rep.upd++:rep.same++}
+    else{db.projects.push({id:uid('p'),customer:'',contact:'',note:'',taxId:'',address:'',...data});rep.add++}
+  });
+  if(fixedTax)rep.notes.push(`${fixedTax} mã số thuế trong file chỉ có 9 chữ số (Excel làm mất số 0 đầu) → đã tự thêm số 0 ở đầu thành 10 số. Hãy đối chiếu lại nếu cần.`);
+  return rep;
+}
+const CAT_ALIAS={'laptop':'c_laptop','lcd':'c_monitor','may in':'c_printer','ups':'c_ups','switch':'c_network','wifi':'c_network','chuot':'c_acc','phim':'c_acc','usb':'c_acc'};
+function resolveCat(name,rep){
+  let n=cell(name);if(!n)n='Chưa phân loại';
+  const nn=norm(n);let c=db.categories.find(x=>norm(x.name)===nn);if(c)return c;
+  const aid=CAT_ALIAS[nn];
+  if(aid){c=by(db.categories,aid);if(c){const e=(rep.map[nn]??={from:n,to:c.name,n:0});e.n++;return c}}
+  c={id:uid('c'),name:n,isIT:false};db.categories.push(c);rep.newCats.add(n);return c;
+}
+function applyStock(rows,wh,file){
+  if(!wh||!by(db.warehouses,wh))throw new Error('Chưa chọn kho.');
+  const rep={add:0,upd:0,same:0,notes:[],extra:[],newCats:new Set(),map:{}},m=stockMap(),lines=new Map(),seen=new Map(),state=new Map();
+  rows.forEach((r,ix)=>{
+    const row=ix+2,sku=cell(r.sku),name=cell(r.name);
+    if(!sku||!name){if(sku||name)rep.notes.push(`Dòng ${row}: thiếu ${!sku?'SKU':'tên hàng'} → bỏ qua`);return}
+    const key=sku.toLowerCase();
+    if(seen.has(key))rep.notes.push(`Dòng ${row}: SKU "${sku}" đã có ở dòng ${seen.get(key)} → dòng sau ghi đè dòng trước`);
+    seen.set(key,row);
+    let unit=cell(r.unit);
+    if(!unit||norm(unit)==='dvt'){rep.notes.push(`Dòng ${row} (${sku} – ${name}): ĐVT ${unit?`ghi "${unit}"`:'để trống'} → đặt tạm "Cái", nên kiểm tra lại mặt hàng này`);unit='Cái'}
+    unit=unit.charAt(0).toLocaleUpperCase('vi')+unit.slice(1);
+    let qty=numVN(r.qty);if(qty<0){rep.notes.push(`Dòng ${row} (${sku}): tồn âm (${qty}) → đặt 0`);qty=0}
+    const price=Math.round(numVN(r.price)*100)/100,cat=resolveCat(r.cat,rep);
+    let it=db.items.find(x=>x.sku.toLowerCase()===key),isNew=false,changed=false;
+    if(it){const before=JSON.stringify(it);it.name=name;it.categoryId=cat.id;it.unit=unit;if(price>0)it.price=price;changed=JSON.stringify(it)!==before}
+    else{it={id:uid('it'),sku,name,categoryId:cat.id,unit,minStock:0,price,note:''};db.items.push(it);isNew=true}
+    const cur=m[it.id]?.[wh]||0,diff=Math.abs(cur-qty)>1e-9;
+    if(diff)lines.set(it.id,{itemId:it.id,system:cur,actual:qty});else lines.delete(it.id);
+    const s=state.get(it.id)||{isNew:false,changed:false};s.isNew=s.isNew||isNew;s.changed=s.changed||changed||diff;state.set(it.id,s);
+  });
+  state.forEach(s=>{if(s.isNew)rep.add++;else if(s.changed)rep.upd++;else rep.same++});
+  if(lines.size)db.stocktakes.push({id:uid('kk'),code:nextCode('KK'),date:todayStr(),warehouseId:wh,note:`Cập nhật tồn kho từ file Excel: ${file}`,lines:[...lines.values()],createdBy:session?.name||'system',createdAt:Date.now()});
+  rep.extra=[['Dòng điều chỉnh tồn',lines.size],['Danh mục mới',rep.newCats.size]];
+  if(rep.newCats.size)rep.notes.unshift(`Sẽ tạo ${rep.newCats.size} danh mục mới từ file: ${[...rep.newCats].join(', ')}`);
+  return rep;
+}
 
 /* =====================================================================
    FIREBASE – ĐỒNG BỘ DỮ LIỆU DÙNG CHUNG
@@ -1561,7 +1791,7 @@ else{
   const uid0=sessionStorage.getItem(SS_KEY),u=db.users.find(x=>x.id===uid0&&x.active);if(u)session={id:u.id,name:u.name,role:u.role,username:u.username};
   render(false);
 }
-window.__wms={get db(){return db},get session(){return session},ACT,SUB,PAGES,render,loadSample,get S(){return S},get T(){return T},stockMap,slipHTML,readVN,get ready(){return CLOUD?cloudReady:true}};
+window.__wms={get db(){return db},get session(){return session},ACT,SUB,PAGES,render,loadSample,get S(){return S},get T(){return T},stockMap,slipHTML,readVN,startImport,get ready(){return CLOUD?cloudReady:true}};
 })();
 
 </script>
