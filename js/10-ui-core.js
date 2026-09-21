@@ -53,6 +53,12 @@ const whOpts=(all='Tất cả kho')=>[['',all],...db.warehouses.map(w=>[w.id,w.n
 const stockWhOpts=()=>[['','Kho nội bộ (tồn thực tế)'],[W_INV,'Kho hóa đơn']];
 const whBadges=r=>slipWhs(r).map(w=>badge(w===W_INV?'info':'ok',w===W_INV?'Hóa đơn':'Nội bộ')).join(' ');
 const catOpts=(all='Tất cả danh mục')=>[['',all],...db.categories.map(c=>[c.id,c.name])];
+/* Ô số kiểu Việt Nam: data-num="money" (tiền VND, tối đa 2 số lẻ) | "int" (số nguyên). Chuẩn hoá khi rời ô. */
+document.addEventListener('change',e=>{
+  const el=e.target;if(!el.dataset||el.dataset.num===undefined||el.readOnly)return;
+  const v=numVN(el.value);el.value=el.value.trim()===''?'':(el.dataset.num==='int'?fmtNum(v):fmtPrice(v));
+});
+document.addEventListener('focusin',e=>{const el=e.target;if(el.dataset&&el.dataset.num!==undefined&&el.select&&!el.readOnly)setTimeout(()=>el.select(),0)});
 function onFilter(e){
   const el=e.target.closest&&e.target.closest('[data-f]');if(!el)return;
   const f=F(),v=el.value;if((f[el.dataset.f]??'')===v)return;
