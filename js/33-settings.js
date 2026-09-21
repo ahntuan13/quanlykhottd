@@ -79,6 +79,30 @@ SUB['user-save']=form=>{
 ACT['user-del']=el=>{const id=el.dataset.id;if(id===session.id)return;if(confirm('Xoá người dùng này?'))transact(()=>{db.users=db.users.filter(u=>u.id!==id);if(!db.users.some(x=>x.role==='admin'&&x.active))throw new Error('Phải còn ít nhất một quản trị viên đang hoạt động.')})&&done('Đã xoá')};
 
 /* ---- hệ thống / sao lưu ---- */
+/* ---- Kiểm tra đơn giá bất thường (thường do gõ/dán số kiểu 1.305.555,5 vào ô số bị hiểu thành 1,3055555) ---- */
+const PRICE_SUS=1000;
+function priceAudit(){
+  const items=db.items.filter(i=>i.price>0&&i.price<PRICE_SUS);
+  const lines=[];
+  [...db.receipts].sort(byDateDesc).forEach(r=>r.lines.forEach((l,idx)=>{if(l.price>0&&l.price<PRICE_SUS)lines.push({r,l,idx})}));
+  return{items,lines};
+}
+function auditCard(){
+  const {items,lines}=priceAudit(),w=can('write');
+  const fix=(kind,id,idx,cur)=>w?`<button class="btn sm" data-act="price-fix" data-kind="${kind}" data-id="${id}" data-idx="${idx}" data-mult="1000" title="Nhân 1.000 → ${fmtPrice(cur*1000)} VND">×1.000</button> <button class="btn sm" data-act="price-fix" data-kind="${kind}" data-id="${id}" data-idx="${idx}" data-mult="1000000" title="Nhân 1.000.000 → ${fmtPrice(cur*1000000)} VND">×1.000.000</button>`:'';
+  const body=(!items.length&&!lines.length)?'<p class="note">Không có đơn giá nào dưới 1.000 VND. Mọi đơn giá đều hợp lý.</p>':`<p class="note">Các đơn giá dưới <b>${fmtNum(PRICE_SUS)} VND</b> thường là do nhập sai dấu chấm / phẩy (ví dụ 1.305.555,5 bị hiểu thành 1,3055555). Nút <b>×1.000</b> / <b>×1.000.000</b> sửa nhanh; hàng thật sự rẻ (ví dụ cáp tính theo mét) thì bỏ qua.</p>
+    ${items.length?`<h4 style="margin:8px 0 6px;font-size:13.5px">Đơn giá tham chiếu của hàng hóa (${items.length})</h4>`+miniTable(['Mã','Tên hàng','Đơn giá hiện tại (VND)',''],items.slice(0,100).map(i=>`<tr><td>${esc(i.sku)}</td><td>${esc(i.name)}</td><td class="num">${fmtPrice(i.price)}</td><td class="act">${fix('item',i.id,0,i.price)} <button class="btn sm" data-act="item-edit" data-id="${i.id}">Sửa</button></td></tr>`)):''}
+    ${lines.length?`<h4 style="margin:12px 0 6px;font-size:13.5px">Dòng trong phiếu nhập (${lines.length})</h4>`+miniTable(['Phiếu','Ngày','Mặt hàng','SL','Đơn giá (VND)','Thành tiền (VND)',''],lines.slice(0,100).map(({r,l,idx})=>`<tr><td>${slipLink('receipt',r)}</td><td>${fmtDate(r.date)}</td><td>${esc(itemLabel(itemOf(l.itemId)||{sku:'?',name:'(đã xoá)'}))}</td><td class="num">${fmtNum(l.qty)}</td><td class="num">${fmtPrice(l.price)}</td><td class="num">${fmtMoney(l.qty*l.price)}</td><td class="act">${fix('line',r.id,idx,l.price)}</td></tr>`)):''}`;
+  return card(`Kiểm tra đơn giá bất thường (${items.length+lines.length})`,body);
+}
+ACT['price-fix']=el=>{
+  const mult=+el.dataset.mult,kind=el.dataset.kind,id=el.dataset.id,idx=+el.dataset.idx;
+  const r2=v=>Math.round(v*mult*100)/100;
+  if(transact(()=>{
+    if(kind==='item'){const it=itemOf(id);it.price=r2(it.price)}
+    else{const r=by(db.receipts,id),l=r.lines[idx],it=itemOf(l.itemId);l.price=r2(l.price);if(it&&it.price>0&&it.price<PRICE_SUS)it.price=l.price}
+  }))done('Đã sửa đơn giá');
+};
 PAGES['set/system']={t:'Sao lưu & Hệ thống',
   r(){
     const adm=can('admin'),kb=Math.round(JSON.stringify(db).length/1024);
@@ -88,6 +112,7 @@ PAGES['set/system']={t:'Sao lưu & Hệ thống',
     ${card('Sao lưu & khôi phục',`<p class="note">${CLOUD?`Dữ liệu nằm trên Firebase (~${kb} KB đang tải về máy). Vẫn nên <b>xuất file sao lưu định kỳ</b>. Khôi phục từ file sẽ thay thế dữ liệu của <b>tất cả mọi người</b>.`:`Dữ liệu được lưu trong trình duyệt này (~${kb} KB). Mỗi trình duyệt / máy có dữ liệu riêng, nên hãy <b>xuất file sao lưu định kỳ</b> và dùng file này để chuyển dữ liệu sang máy khác.`}</p><div class="bar"><button class="btn primary" data-act="backup">⬇ Xuất sao lưu (JSON)</button><button class="btn" data-act="restore" ${adm?'':'disabled'}>⬆ Khôi phục từ file</button></div>`)}
     </div>
     ${card('Dữ liệu mẫu & làm mới',`<p class="note">“Nạp dữ liệu mẫu” thay toàn bộ dữ liệu kho hiện tại bằng bộ dữ liệu demo (giữ nguyên tài khoản người dùng). “Xoá toàn bộ” đưa hệ thống về trạng thái trống.</p><div class="bar"><button class="btn" data-act="sample" ${adm?'':'disabled'}>Nạp dữ liệu mẫu</button><button class="btn danger" data-act="wipe" ${adm?'':'disabled'}>Xoá toàn bộ dữ liệu kho</button></div>`)}
+    ${auditCard()}
     ${card('Tổng số bản ghi',miniTable(['Nhóm','Số lượng'],[['Hàng hóa',db.items.length],['Phiếu nhập',db.receipts.length],['Phiếu xuất',db.issues.length],['Phiếu kiểm kê',db.stocktakes.length],['Tài sản IT',db.assets.length],['Nhà cung cấp',db.suppliers.length],['Khách lẻ',db.retail.length],['Dự án',db.projects.length]].map(([a,b])=>`<tr><td>${a}</td><td class="num">${b}</td></tr>`)))}`;
   }};
 SUB.company=form=>{if(!can('admin'))return toast('Chỉ quản trị viên được sửa.','error');const d=fd(form);db.company={name:d.name.trim(),address:d.address.trim(),phone:d.phone.trim()};save();render(true);toast('Đã lưu')};
