@@ -142,7 +142,7 @@ table.t td small{display:block;color:var(--muted);font-size:12px}
 /* ---------- slip form ---------- */
 .lh{display:flex;justify-content:space-between;align-items:center;margin:4px 0 8px}
 .ln{border:1px solid var(--line);border-radius:var(--r);padding:8px 10px;margin-bottom:8px;background:#fbfcfd}
-.ln-main{display:grid;grid-template-columns:minmax(200px,1fr) 48px 96px 96px 34px;gap:8px;align-items:center}
+.ln-main{display:grid;grid-template-columns:minmax(200px,1fr) 48px minmax(140px,auto) 96px 34px;gap:8px;align-items:center}
 .ln-main.isr{grid-template-columns:minmax(200px,1fr) 48px 92px 130px 120px 34px}
 .ln .unit{color:var(--muted);font-size:12.5px}
 .ln .stk{font-size:12.5px;color:var(--muted);white-space:nowrap}
@@ -216,6 +216,13 @@ table.t td small{display:block;color:var(--muted);font-size:12px}
   .pb{page-break-after:always}
   @page{margin:12mm}
 }
+/* ---------- chế độ ghi nhận kho ---------- */
+.modes{display:grid;grid-template-columns:repeat(3,1fr);gap:8px}
+.mode{border:1px solid #cfd7e2;border-radius:8px;padding:8px 10px;cursor:pointer;display:flex;flex-direction:column;gap:2px;background:#fff}
+.mode input{accent-color:var(--acc)}
+.mode small{color:var(--muted);font-size:12px;line-height:1.35}
+.mode.on{border-color:var(--acc);background:var(--acc-s)}
+@media (max-width:760px){.modes{grid-template-columns:1fr}}
 /* ---------- combobox & import ---------- */
 .cbp{position:fixed;z-index:300;background:#fff;border:1px solid #c9d2de;border-radius:8px;box-shadow:0 10px 30px rgba(15,30,51,.22);overflow:auto;padding:4px}
 .cbo{padding:7px 10px;border-radius:6px;cursor:pointer;display:flex;flex-direction:column;gap:1px}
@@ -316,7 +323,7 @@ function defaultDB(){return{
   seq:{PN:0,PX:0,KK:0,TS:0,HH:0},
   company:{name:'Taikisha Vietnam Engineering Inc. (TVE-HCM)',address:'',phone:''},
   users:[{id:'u_admin',username:'admin',name:'Quản trị',role:'admin',pass:pw('admin123'),active:true}],
-  warehouses:[{id:'w_main',name:'Kho chính',location:'',keeper:''}],
+  warehouses:WH_DEF(),
   categories:[
     {id:'c_laptop',name:'Laptop / PC',isIT:true,slug:'laptop'},
     {id:'c_monitor',name:'Monitor',isIT:true,slug:'monitor'},
@@ -332,7 +339,7 @@ function defaultDB(){return{
 function emptyCloudDB(){const d=defaultDB();d.users=[];d.categories=[];d.warehouses=[];return d}
 let db=null, session=null;
 function migrate(){const d=defaultDB();for(const k in d){if(db[k]===undefined)db[k]=d[k]}for(const k in d.seq){if(db.seq[k]===undefined)db.seq[k]=0}}
-function load(){if(CLOUD){db=emptyCloudDB();migrate();return}try{const raw=localStorage.getItem(LS_KEY);db=raw?JSON.parse(raw):defaultDB()}catch(e){db=defaultDB()}migrate()}
+function load(){if(CLOUD){db=emptyCloudDB();migrate();return}try{const raw=localStorage.getItem(LS_KEY);db=raw?JSON.parse(raw):defaultDB()}catch(e){db=defaultDB()}migrate();if(migrateWarehouses())save()}
 function save(){if(CLOUD){cloudPush();return}try{localStorage.setItem(LS_KEY,JSON.stringify(db))}catch(e){toast('Không lưu được dữ liệu (bộ nhớ trình duyệt đầy?). Hãy xuất sao lưu ngay.','error')}}
 
 /* ---------- truy vấn nhanh ---------- */
@@ -340,6 +347,32 @@ const by=(a,id)=>a.find(x=>x.id===id);
 const itemOf=id=>by(db.items,id), catOf=id=>by(db.categories,id);
 const nm=(arr,id,f='name')=>{const o=by(arr,id);return o?(o[f]??''):'—'};
 const whName=id=>nm(db.warehouses,id);
+/* ---- 2 kho cố định: Kho nội bộ (tồn thực tế) + Kho hóa đơn (theo hóa đơn đầu vào/đầu ra) ---- */
+const W_INT='w_int',W_INV='w_inv';
+const WH_DEF=()=>[{id:W_INT,name:'Kho nội bộ',location:'Tồn kho thực tế (hàng đang có)',keeper:''},{id:W_INV,name:'Kho hóa đơn',location:'Số lượng theo hóa đơn đầu vào / đầu ra',keeper:''}];
+const slipWhs=r=>Array.isArray(r.whs)&&r.whs.length?r.whs:(r.warehouseId?[r.warehouseId]:[]);
+const inWh=(r,w)=>slipWhs(r).includes(w);
+const whsLabel=r=>slipWhs(r).map(w=>whName(w)).join(' + ')||'—';
+const modeOf=whs=>whs.includes(W_INT)&&whs.includes(W_INV)?'both':whs.includes(W_INV)?'inv':'int';
+const modeWhs=m=>m==='both'?[W_INT,W_INV]:m==='inv'?[W_INV]:[W_INT];
+/* Gộp mọi kho cũ về 2 kho hệ thống. Chạy an toàn nhiều lần (idempotent). Trả về true nếu có thay đổi. */
+function migrateWarehouses(){
+  if(!db)return false;
+  const ids=db.warehouses.map(w=>w.id),ok2=[W_INT,W_INV];
+  const clean=ids.length===2&&ids.includes(W_INT)&&ids.includes(W_INV)
+    &&db.receipts.every(r=>Array.isArray(r.whs)&&!('warehouseId' in r))&&db.issues.every(r=>Array.isArray(r.whs)&&!('warehouseId' in r))
+    &&db.stocktakes.every(s=>ok2.includes(s.warehouseId))&&db.adjustments.every(a=>ok2.includes(a.warehouseId))&&db.assets.every(a=>a.warehouseId===W_INT);
+  if(clean)return false;
+  const old=db.warehouses,map={};
+  old.forEach(w=>{const n=norm(w.name);map[w.id]=(w.id===W_INV||(w.id!==W_INT&&/hoa don/.test(n)))?W_INV:W_INT});
+  const re=id=>id===W_INV?W_INV:(map[id]||W_INT);
+  db.warehouses=WH_DEF().map(d=>{const src=old.find(w=>w.id===d.id)||old.find(w=>map[w.id]===d.id&&norm(w.name)===norm(d.name));return src?{...d,location:src.location||d.location,keeper:src.keeper||''}:d});
+  const fix=r=>{r.whs=[...new Set((Array.isArray(r.whs)&&r.whs.length?r.whs:[r.warehouseId]).map(re))];delete r.warehouseId};
+  db.receipts.forEach(fix);db.issues.forEach(fix);
+  db.stocktakes.forEach(s=>{s.warehouseId=re(s.warehouseId)});db.adjustments.forEach(a=>{a.warehouseId=re(a.warehouseId)});
+  db.assets.forEach(a=>{a.warehouseId=W_INT});
+  return true;
+}
 const itemLabel=i=>`${i.sku} · ${i.name}`;
 function targetLabel(type,id){
   if(type==='project'){const p=by(db.projects,id);return p?`${p.code} – ${p.name}`:'—'}
@@ -352,20 +385,21 @@ const can=a=>{const r=session?.role;return a==='admin'?r==='admin':(r==='admin'|
 function stockMap(asOf,exclusive){
   const m={};const add=(i,w,q)=>{const o=(m[i]??={});o[w]=(o[w]||0)+q};
   const ok=d=>!asOf||(exclusive?d<asOf:d<=asOf);
-  db.receipts.forEach(r=>{if(ok(r.date))r.lines.forEach(l=>add(l.itemId,r.warehouseId,+l.qty||0))});
-  db.issues.forEach(r=>{if(ok(r.date))r.lines.forEach(l=>add(l.itemId,r.warehouseId,-(+l.qty||0)))});
+  db.receipts.forEach(r=>{if(ok(r.date))slipWhs(r).forEach(w=>r.lines.forEach(l=>add(l.itemId,w,+l.qty||0)))});
+  db.issues.forEach(r=>{if(ok(r.date))slipWhs(r).forEach(w=>r.lines.forEach(l=>add(l.itemId,w,-(+l.qty||0))))});
   db.adjustments.forEach(a=>{if(ok(a.date))add(a.itemId,a.warehouseId,+a.qty||0)});
   db.stocktakes.forEach(s=>{if(ok(s.date))s.lines.forEach(l=>add(l.itemId,s.warehouseId,(+l.actual||0)-(+l.system||0)))});
   for(const i in m)for(const w in m[i])m[i][w]=Math.round(m[i][w]*1000)/1000;
   return m;
 }
-const totalOf=(m,id)=>Object.values(m[id]||{}).reduce((a,b)=>a+b,0);
-const qtyIn=(m,id,wh)=>wh?(m[id]?.[wh]||0):totalOf(m,id);
-function findNegative(){const m=stockMap();for(const i in m)for(const w in m[i])if(m[i][w]<-1e-9)return `${nm(db.items,i)} tại ${whName(w)} (${fmtNum(m[i][w])})`;return null}
+/* Tồn "tổng" = tồn thực tế (Kho nội bộ). Kho hóa đơn là sổ theo hóa đơn nên không cộng gộp. */
+const totalOf=(m,id)=>m[id]?.[W_INT]||0;
+const qtyIn=(m,id,wh)=>m[id]?.[wh||W_INT]||0;
+function findNegative(){const m=stockMap();for(const i in m)for(const w in m[i])if(m[i][w]<-1e-9)return `${nm(db.items,i)} tại ${whName(w)} (${fmtNum(m[i][w])})${w===W_INV?'. Kho hóa đơn chưa đủ số lượng theo hóa đơn nhập: hãy nhập hóa đơn đầu vào trước, hoặc chọn “Chỉ Kho nội bộ” cho phiếu này':''}`;return null}
 function flow(kind,from,to,wh){
-  const o={};
+  wh=wh||W_INT;const o={};
   db[kind].forEach(r=>{
-    if((from&&r.date<from)||(to&&r.date>to)||(wh&&r.warehouseId!==wh))return;
+    if((from&&r.date<from)||(to&&r.date>to)||!inWh(r,wh))return;
     r.lines.forEach(l=>{const x=(o[l.itemId]??={qty:0,val:0});const q=+l.qty||0;x.qty+=q;x.val+=q*(+l.price||itemOf(l.itemId)?.price||0)});
   });
   return o;
@@ -406,7 +440,7 @@ function pushAdj(itemId,warehouseId,qty,reason,date){db.adjustments.push({id:uid
 
 /* Phiếu nhập → tạo/đồng bộ tài sản theo Serial */
 function syncReceiptAssets(r){
-  const want=[];r.lines.forEach(l=>(l.serials||[]).forEach(s=>want.push({itemId:l.itemId,serial:s,warranty:l.warranty})));
+  const want=[];if(inWh(r,W_INT))r.lines.forEach(l=>(l.serials||[]).forEach(s=>want.push({itemId:l.itemId,serial:s,warranty:l.warranty})));
   const key=(i,s)=>i+'|'+String(s||'').toLowerCase();
   const have=db.assets.filter(a=>a.receiptId===r.id);
   const wantKeys=new Set(want.map(w=>key(w.itemId,w.serial)));
@@ -417,14 +451,14 @@ function syncReceiptAssets(r){
     }else{
       const w=want.find(x=>key(x.itemId,x.serial)===key(a.itemId,a.serial));
       a.purchaseDate=r.date;a.warrantyEnd=w.warranty?addMonths(r.date,+w.warranty):'';
-      if(a.status==='in_stock')a.warehouseId=r.warehouseId;
+      if(a.status==='in_stock')a.warehouseId=W_INT;
     }
   }
   const haveKeys=new Set(have.filter(a=>db.assets.includes(a)).map(a=>key(a.itemId,a.serial)));
   for(const w of want){
     if(haveKeys.has(key(w.itemId,w.serial)))continue;
     if(db.assets.some(a=>key(a.itemId,a.serial)===key(w.itemId,w.serial)))throw new Error(`Serial ${w.serial} đã tồn tại trong danh sách tài sản`);
-    const a={id:uid('a'),tag:nextTag(),itemId:w.itemId,serial:w.serial,spec:'',status:'in_stock',counted:true,warehouseId:r.warehouseId,holder:null,issueId:null,receiptId:r.id,purchaseDate:r.date,warrantyEnd:w.warranty?addMonths(r.date,+w.warranty):'',note:'',history:[]};
+    const a={id:uid('a'),tag:nextTag(),itemId:w.itemId,serial:w.serial,spec:'',status:'in_stock',counted:true,warehouseId:W_INT,holder:null,issueId:null,receiptId:r.id,purchaseDate:r.date,warrantyEnd:w.warranty?addMonths(r.date,+w.warranty):'',note:'',history:[]};
     addHist(a,'Nhập kho',`Phiếu nhập ${r.code}`,r.date);db.assets.push(a);
   }
 }
@@ -432,11 +466,12 @@ function _newReceipt(o){const r={id:uid('r'),code:nextCode('PN'),createdBy:sessi
 
 /* Phiếu xuất → gán/thu hồi tài sản */
 function applyIssueAssets(r){
+  if(r.lines.some(l=>(l.assetIds||[]).length)&&!inWh(r,W_INT))throw new Error('Chọn thiết bị theo Serial chỉ áp dụng khi phiếu ghi nhận vào Kho nội bộ (hàng thực tế).');
   const seen=new Set();
   r.lines.forEach(l=>(l.assetIds||[]).forEach(id=>{
     const a=by(db.assets,id);if(!a)throw new Error('Thiết bị đã chọn không còn tồn tại');
     if(seen.has(id))throw new Error(`Thiết bị ${a.tag} bị chọn trùng`);seen.add(id);
-    if(a.status!=='in_stock'||a.itemId!==l.itemId||a.warehouseId!==r.warehouseId)throw new Error(`Thiết bị ${a.tag} không khả dụng để xuất (không ở trạng thái Trong kho hoặc khác kho)`);
+    if(a.status!=='in_stock'||a.itemId!==l.itemId||a.warehouseId!==W_INT)throw new Error(`Thiết bị ${a.tag} không khả dụng để xuất (không ở trạng thái Trong kho hoặc khác kho)`);
     a.status='assigned';a.counted=false;a.holder={type:r.targetType,id:r.targetId};a.issueId=r.id;
     addHist(a,'Cấp phát',`${r.code} → ${targetLabel(r.targetType,r.targetId)}`,r.date);
   }));
@@ -445,7 +480,7 @@ function revertIssueAssets(r){
   r.lines.forEach(l=>(l.assetIds||[]).forEach(id=>{
     const a=by(db.assets,id);if(!a)return;
     if(a.issueId!==r.id)throw new Error(`Thiết bị ${a.tag} đã thay đổi trạng thái sau khi cấp phát nên không thể sửa/huỷ phiếu ${r.code}`);
-    a.status='in_stock';a.counted=true;a.holder=null;a.issueId=null;a.warehouseId=r.warehouseId;
+    a.status='in_stock';a.counted=true;a.holder=null;a.issueId=null;a.warehouseId=W_INT;
     addHist(a,'Thu hồi',`Huỷ/sửa phiếu xuất ${r.code}`);
   }));
 }
@@ -472,8 +507,9 @@ function slipHTML(kind,r){
       <div class="r">Số: <b>${esc(r.code)}</b><br>Ngày: ${fmtDate(r.date)}</div></div>
     <h2>${isIn?'PHIẾU NHẬP KHO':'PHIẾU XUẤT KHO'}</h2>
     <div class="sub">${isIn?'Goods Receipt Note':'Goods Issue Note'}</div>
-    <div class="mt"><div>${partyLabel}: <b>${esc(party)}</b></div><div>Kho: <b>${esc(whName(r.warehouseId))}</b></div>
-      ${isIn?`<div>Số chứng từ: ${esc(r.ref||'—')}</div><div>Người lập: ${esc(r.createdBy||'')}</div>`:`<div>Người nhận: ${esc(r.receiver||'—')}</div><div>Người lập: ${esc(r.createdBy||'')}</div>`}
+    <div class="mt"><div>${partyLabel}: <b>${esc(party)}</b></div><div>Ghi nhận kho: <b>${esc(whsLabel(r))}</b></div>
+      <div>Số hóa đơn / chứng từ: <b>${esc(r.ref||'—')}</b></div><div>Ngày hóa đơn: ${r.invoiceDate?fmtDate(r.invoiceDate):'—'}</div>
+      ${isIn?`<div>Người lập: ${esc(r.createdBy||'')}</div><div></div>`:`<div>Người nhận: ${esc(r.receiver||'—')}</div><div>Người lập: ${esc(r.createdBy||'')}</div>`}
       <div style="grid-column:1/-1">Ghi chú: ${esc(r.note||'')}</div></div>
     <table><thead><tr><th style="width:34px">STT</th><th style="width:90px">Mã hàng</th><th>Tên hàng hóa</th><th style="width:50px">ĐVT</th><th style="width:60px">SL</th>${isIn?'<th style="width:90px">Đơn giá</th><th style="width:100px">Thành tiền</th>':''}</tr></thead><tbody>${rows}${foot}</tbody></table>
     ${isIn&&total>0?`<p style="margin-top:8px"><i>Bằng chữ: ${esc(readVN(total))}.</i></p>`:''}
@@ -528,6 +564,8 @@ const fSel=(name,label,opts)=>`<select class="in" data-f="${name}" title="${esc(
 const fDate=(name,label,def='')=>`<label class="fl">${label}<input class="in" type="date" data-f="${name}" value="${F()[name]??def}"></label>`;
 const fMonth=(name,label,def='')=>`<label class="fl">${label}<input class="in" type="month" data-f="${name}" value="${F()[name]??def}"></label>`;
 const whOpts=(all='Tất cả kho')=>[['',all],...db.warehouses.map(w=>[w.id,w.name])];
+const stockWhOpts=()=>[['','Kho nội bộ (tồn thực tế)'],[W_INV,'Kho hóa đơn']];
+const whBadges=r=>slipWhs(r).map(w=>badge(w===W_INV?'info':'ok',w===W_INV?'Hóa đơn':'Nội bộ')).join(' ');
 const catOpts=(all='Tất cả danh mục')=>[['',all],...db.categories.map(c=>[c.id,c.name])];
 function onFilter(e){
   const el=e.target.closest&&e.target.closest('[data-f]');if(!el)return;
@@ -677,11 +715,11 @@ const kpi=(l,v,s='',tone='')=>`<div class="kpi ${tone}"><div class="kl">${l}</di
 const card=(title,body,cls='')=>`<section class="card ${cls}">${title?`<h4>${title}</h4>`:''}${body}</section>`;
 const miniTable=(heads,rows,empty='Không có dữ liệu.')=>rows.length?`<div class="tw"><table class="t"><thead><tr>${heads.map(h=>`<th>${h}</th>`).join('')}</tr></thead><tbody>${rows.join('')}</tbody></table></div>`:`<div class="note">${empty}</div>`;
 function stockStats(){const m=stockMap();let qty=0,val=0;db.items.forEach(it=>{const t=totalOf(m,it.id);qty+=t;val+=t*(it.price||0)});return{m,qty,val}}
-function monthlyFlow(months){
+function monthlyFlow(months,wh=W_INT){
   return months.map(mk=>{
     let iq=0,iv=0,oq=0,ov=0,ic=0,oc=0;
-    db.receipts.forEach(r=>{if(r.date.slice(0,7)!==mk)return;ic++;r.lines.forEach(l=>{iq+=+l.qty||0;iv+=(+l.qty||0)*(+l.price||0)})});
-    db.issues.forEach(r=>{if(r.date.slice(0,7)!==mk)return;oc++;r.lines.forEach(l=>{oq+=+l.qty||0;ov+=(+l.qty||0)*(+l.price||0)})});
+    db.receipts.forEach(r=>{if(r.date.slice(0,7)!==mk||!inWh(r,wh))return;ic++;r.lines.forEach(l=>{iq+=+l.qty||0;iv+=(+l.qty||0)*(+l.price||0)})});
+    db.issues.forEach(r=>{if(r.date.slice(0,7)!==mk||!inWh(r,wh))return;oc++;r.lines.forEach(l=>{oq+=+l.qty||0;ov+=(+l.qty||0)*(+l.price||0)})});
     return{mk,iq,iv,oq,ov,ic,oc};
   });
 }
@@ -691,10 +729,10 @@ const slipLink=(k,r)=>`<button class="lnk" data-act="slip-view" data-k="${k}" da
 
 PAGES['dash/overview']={t:'Tổng quan',
   r(){
-    const {qty,val}=stockStats(),cur=monthlyFlow([todayStr().slice(0,7)])[0],A=alertsData(),cnt=s=>db.assets.filter(a=>a.status===s).length;
+    const {m:sm,qty,val}=stockStats(),invQty=db.items.reduce((a,i)=>a+(sm[i.id]?.[W_INV]||0),0),cur=monthlyFlow([todayStr().slice(0,7)])[0],A=alertsData(),cnt=s=>db.assets.filter(a=>a.status===s).length;
     const recent=[...db.receipts.map(r=>({k:'receipt',r})),...db.issues.map(r=>({k:'issue',r}))].sort((a,b)=>byDateDesc(a.r,b.r)).slice(0,8);
     const na=A.low.length+A.out.length;
-    return `<div class="kpis">${kpi('Mã hàng',fmtNum(db.items.length),'trong danh mục')}${kpi('Tổng số lượng tồn',fmtNum(qty),`${db.warehouses.length} kho`,'info')}${kpi('Giá trị tồn (tham chiếu)',fmtMoney(val)+' ₫','theo đơn giá gần nhất','acc')}${kpi('Nhập tháng này',fmtNum(cur.iq),`${cur.ic} phiếu`,'ok')}${kpi('Xuất tháng này',fmtNum(cur.oq),`${cur.oc} phiếu`,'warn')}${kpi('Hàng cần bổ sung',na,`${A.out.length} hết hàng · ${A.low.length} sắp hết`,na?'bad':'ok')}</div>
+    return `<div class="kpis">${kpi('Mã hàng',fmtNum(db.items.length),'trong danh mục')}${kpi('Tồn thực tế (Kho nội bộ)',fmtNum(qty),'số lượng hàng đang có','info')}${kpi('Tồn theo hóa đơn',fmtNum(invQty),`chênh lệch so với thực tế: ${invQty-qty>0?'+':''}${fmtNum(invQty-qty)}`,'acc')}${kpi('Giá trị tồn (tham chiếu)',fmtMoney(val)+' ₫','theo đơn giá gần nhất','acc')}${kpi('Nhập tháng này',fmtNum(cur.iq),`${cur.ic} phiếu`,'ok')}${kpi('Xuất tháng này',fmtNum(cur.oq),`${cur.oc} phiếu`,'warn')}${kpi('Hàng cần bổ sung',na,`${A.out.length} hết hàng · ${A.low.length} sắp hết`,na?'bad':'ok')}</div>
     <div class="grid g2">${card('Nhập / Xuất 6 tháng gần nhất (số lượng)','<div class="ch"><canvas id="c1"></canvas></div>')}${card('Giá trị tồn theo danh mục','<div class="ch"><canvas id="c2"></canvas></div>')}</div>
     <div class="grid g2">${card('Thiết bị IT',`<div class="kpis sm" style="margin:0">${kpi('Trong kho',cnt('in_stock'),'','ok')}${kpi('Đã cấp phát',cnt('assigned'),'','info')}${kpi('Sửa chữa',cnt('repair'),'','warn')}${kpi('Thanh lý',cnt('retired'))}</div><div class="note">Bảo hành hết hạn / sắp hết hạn (≤ 60 ngày): <b>${A.warr.length}</b> · <a href="#/dash/alerts">Xem cảnh báo</a></div>`)}
     ${card('Phiếu gần đây',miniTable(['Phiếu','Ngày','Loại','Đối tượng','SL'],recent.map(({k,r})=>`<tr><td>${slipLink(k,r)}</td><td>${fmtDate(r.date)}</td><td>${k==='receipt'?badge('ok','Nhập'):badge('warn','Xuất')}</td><td>${esc(k==='receipt'?(r.supplierId?nm(db.suppliers,r.supplierId):'—'):targetLabel(r.targetType,r.targetId))}</td><td class="num">${fmtNum(slipTotals(r).q)}</td></tr>`),'Chưa có phiếu nào.'))}</div>`;
@@ -707,32 +745,36 @@ PAGES['dash/overview']={t:'Tổng quan',
     chart('c2',{type:'doughnut',data:{labels:rows.map(x=>x.n),datasets:[{data:rows.map(x=>useV?x.v:x.q),backgroundColor:PAL}]},options:baseOpt()});
   }};
 
+function diffCard(m){
+  const rows=db.items.map(i=>({i,a:m[i.id]?.[W_INT]||0,b:m[i.id]?.[W_INV]||0})).filter(x=>Math.abs(x.a-x.b)>1e-9).sort((x,y)=>Math.abs(y.a-y.b)-Math.abs(x.a-x.b)).slice(0,15);
+  return card('Chênh lệch giữa hàng thực tế và hóa đơn (top 15)',`<p class="note" style="margin-top:-6px">Chênh lệch = Kho nội bộ − Kho hóa đơn. Dương: hàng thực tế nhiều hơn hóa đơn; âm: hóa đơn nhiều hơn hàng thực tế.</p>`+miniTable(['Mã','Tên hàng','Kho nội bộ','Kho hóa đơn','Chênh lệch'],rows.map(({i,a,b})=>`<tr><td>${esc(i.sku)}</td><td>${esc(i.name)}</td><td class="num">${fmtNum(a)}</td><td class="num">${fmtNum(b)}</td><td class="num"><span class="${a-b>0?'pos':'neg'}">${a-b>0?'+':''}${fmtNum(a-b)}</span></td></tr>`),'Số liệu hóa đơn và thực tế đang khớp nhau.'));
+}
 PAGES['dash/stock']={t:'Tồn kho',
   r(){
     const {m}=stockStats(),rows=db.categories.map(c=>{const its=db.items.filter(i=>i.categoryId===c.id);return{n:c.name,codes:its.length,q:its.reduce((a,i)=>a+totalOf(m,i.id),0),v:its.reduce((a,i)=>a+totalOf(m,i.id)*(i.price||0),0)}}).filter(x=>x.codes);
     const A=alertsData();
-    return `<div class="grid g2">${card('Top 10 hàng có giá trị tồn cao nhất','<div class="ch tall"><canvas id="c1"></canvas></div>')}${card('Số lượng tồn theo kho','<div class="ch tall"><canvas id="c2"></canvas></div>')}</div>
+    return `<div class="grid g2">${card('Top 10 hàng có giá trị tồn cao nhất','<div class="ch tall"><canvas id="c1"></canvas></div>')}${card('Tổng số lượng theo kho','<div class="ch tall"><canvas id="c2"></canvas></div>')}</div>
     ${card('Tồn kho theo danh mục',miniTable(['Danh mục','Số mã','Tổng SL','Giá trị (₫)'],rows.map(x=>`<tr><td>${esc(x.n)}</td><td class="num">${x.codes}</td><td class="num">${fmtNum(x.q)}</td><td class="num">${fmtMoney(x.v)}</td></tr>`)))}
-    ${card(`Hàng sắp hết / hết hàng (${A.low.length+A.out.length})`,miniTable(['Mã','Tên hàng','Tồn','Tối thiểu','Trạng thái'],[...A.out,...A.low].map(({it,t})=>`<tr><td>${esc(it.sku)}</td><td>${esc(it.name)}</td><td class="num">${fmtNum(t)}</td><td class="num">${fmtNum(it.minStock)}</td><td>${badge(...itemStatus(it,t))}</td></tr>`),'Không có hàng nào cần bổ sung.'))}`;
+    ${diffCard(m)}${card(`Hàng sắp hết / hết hàng (${A.low.length+A.out.length})`,miniTable(['Mã','Tên hàng','Tồn','Tối thiểu','Trạng thái'],[...A.out,...A.low].map(({it,t})=>`<tr><td>${esc(it.sku)}</td><td>${esc(it.name)}</td><td class="num">${fmtNum(t)}</td><td class="num">${fmtNum(it.minStock)}</td><td>${badge(...itemStatus(it,t))}</td></tr>`),'Không có hàng nào cần bổ sung.'))}`;
   },
   m(){
     const {m}=stockStats(),top=db.items.map(i=>({n:i.name,v:totalOf(m,i.id)*(i.price||0)})).filter(x=>x.v>0).sort((a,b)=>b.v-a.v).slice(0,10);
     chart('c1',{type:'bar',data:{labels:top.map(x=>x.n.length>26?x.n.slice(0,25)+'…':x.n),datasets:[{label:'Giá trị (₫)',data:top.map(x=>x.v),backgroundColor:PAL[0]}]},options:baseOpt({indexAxis:'y',plugins:{legend:{display:false}}})});
-    const ws=db.warehouses.map(w=>({n:w.name,q:db.items.reduce((a,i)=>a+(m[i.id]?.[w.id]||0),0)}));
-    chart('c2',{type:'doughnut',data:{labels:ws.map(x=>x.n),datasets:[{data:ws.map(x=>x.q),backgroundColor:PAL}]},options:baseOpt()});
+    const sumW=w=>db.items.reduce((a,i)=>a+(m[i.id]?.[w]||0),0);
+    chart('c2',{type:'bar',data:{labels:['Kho nội bộ (thực tế)','Kho hóa đơn'],datasets:[{label:'Tổng số lượng',data:[sumW(W_INT),sumW(W_INV)],backgroundColor:[PAL[1],PAL[0]]}]},options:baseOpt({plugins:{legend:{display:false}},scales:{y:{beginAtZero:true}}})});
   }};
 
-function monthTable(months){
-  const fl=monthlyFlow(months),tot=fl.reduce((a,x)=>({iq:a.iq+x.iq,iv:a.iv+x.iv,oq:a.oq+x.oq,ov:a.ov+x.ov,ic:a.ic+x.ic,oc:a.oc+x.oc}),{iq:0,iv:0,oq:0,ov:0,ic:0,oc:0});
+function monthTable(months,wh){
+  const fl=monthlyFlow(months,wh),tot=fl.reduce((a,x)=>({iq:a.iq+x.iq,iv:a.iv+x.iv,oq:a.oq+x.oq,ov:a.ov+x.ov,ic:a.ic+x.ic,oc:a.oc+x.oc}),{iq:0,iv:0,oq:0,ov:0,ic:0,oc:0});
   const cols=[{h:'Tháng',f:r=>`${r.mk.slice(5)}/${r.mk.slice(0,4)}`},nc('Số phiếu nhập',r=>r.ic),nc('SL nhập',r=>r.iq),nc('Giá trị nhập (₫)',r=>r.iv,fmtMoney),nc('Số phiếu xuất',r=>r.oc),nc('SL xuất',r=>r.oq),nc('Giá trị xuất (₫)',r=>r.ov,fmtMoney)];
   return table(cols,fl,{foot:`<tr><td>Tổng</td><td class="num">${tot.ic}</td><td class="num">${fmtNum(tot.iq)}</td><td class="num">${fmtMoney(tot.iv)}</td><td class="num">${tot.oc}</td><td class="num">${fmtNum(tot.oq)}</td><td class="num">${fmtMoney(tot.ov)}</td></tr>`});
 }
 const yearOpts=()=>{const y=new Date().getFullYear();return[0,1,2,3,4].map(i=>String(y-i)).map(v=>[v,v])};
 const monthsOfYear=y=>Array.from({length:12},(_,i)=>`${y}-${pad(i+1)}`);
 PAGES['dash/monthly']={t:'Nhập / Xuất theo tháng',
-  head(){return `<div class="bar"><label class="fl">Năm ${fSel('year','Năm',yearOpts())}</label><div class="sp"></div><button class="btn" data-act="export" data-name="nhap-xuat-theo-thang">⬇ Excel</button></div>`},
-  tbl(){const y=F().year||String(new Date().getFullYear());return `<div class="card"><h4>Số lượng nhập / xuất năm ${y}</h4><div class="ch"><canvas id="c1"></canvas></div></div>${monthTable(monthsOfYear(y))}`},
-  tm(){const y=F().year||String(new Date().getFullYear()),fl=monthlyFlow(monthsOfYear(y));
+  head(){return `<div class="bar"><label class="fl">Năm ${fSel('year','Năm',yearOpts())}</label>${fSel('wh','Kho',stockWhOpts())}<div class="sp"></div><button class="btn" data-act="export" data-name="nhap-xuat-theo-thang">⬇ Excel</button></div>`},
+  tbl(){const y=F().year||String(new Date().getFullYear());return `<div class="card"><h4>Số lượng nhập / xuất năm ${y} – ${esc(whName(F().wh||W_INT))}</h4><div class="ch"><canvas id="c1"></canvas></div></div>${monthTable(monthsOfYear(y),F().wh||W_INT)}`},
+  tm(){const y=F().year||String(new Date().getFullYear()),fl=monthlyFlow(monthsOfYear(y),F().wh||W_INT);
     chart('c1',{type:'bar',data:{labels:fl.map(x=>'T'+x.mk.slice(5)),datasets:[{label:'Nhập',data:fl.map(x=>x.iq),backgroundColor:PAL[3]},{label:'Xuất',data:fl.map(x=>x.oq),backgroundColor:PAL[0]}]},options:baseOpt({scales:{y:{beginAtZero:true}}})})}};
 
 PAGES['dash/alerts']={t:'Cảnh báo',
@@ -802,17 +844,18 @@ function importItems(file){
 }
 
 PAGES['wh/stock']={t:'Tồn kho',
-  head(){return `<div class="bar">${fSearch('Tìm mã / tên hàng…')}${fSel('wh','Kho',whOpts())}${fSel('cat','Danh mục',catOpts())}${fSel('st','Trạng thái',[['','Mọi trạng thái'],['out','Hết hàng'],['low','Sắp hết'],['ok','Còn hàng']])}<div class="sp"></div>${can('write')?'<button class="btn" data-act="up-stock">⬆ Upload file Tồn kho</button>':''}<button class="btn" data-act="export" data-name="ton-kho">⬇ Excel</button></div>`},
+  head(){return `<div class="bar">${fSearch('Tìm mã / tên hàng…')}${fSel('cat','Danh mục',catOpts())}${fSel('st','Trạng thái',[['','Mọi trạng thái'],['out','Hết hàng'],['low','Sắp hết'],['ok','Còn hàng'],['diff','Hóa đơn ≠ thực tế']])}<div class="sp"></div>${can('write')?'<button class="btn" data-act="up-stock">⬆ Upload file Tồn kho</button>':''}<button class="btn" data-act="export" data-name="ton-kho">⬇ Excel</button></div><p class="note"><b>Kho nội bộ</b> là tồn hàng thực tế (dùng để cảnh báo hết hàng, tính giá trị tồn). <b>Kho hóa đơn</b> là số lượng theo hóa đơn nhập / xuất. Chênh lệch = thực tế − hóa đơn.</p>`},
   tbl(){
     const f=F(),q=(f.q||'').toLowerCase(),m=stockMap(),map={bad:'out',warn:'low',ok:'ok'};
-    const rows=db.items.filter(i=>{const t=qtyIn(m,i.id,f.wh);return(!f.cat||i.categoryId===f.cat)&&(!q||(i.sku+' '+i.name).toLowerCase().includes(q))&&(!f.st||map[itemStatus(i,t)[0]]===f.st)}).sort((a,b)=>a.sku.localeCompare(b.sku));
-    const whs=f.wh?db.warehouses.filter(w=>w.id===f.wh):db.warehouses;
+    const pi=i=>m[i.id]?.[W_INT]||0,vi=i=>m[i.id]?.[W_INV]||0;
+    const rows=db.items.filter(i=>(!f.cat||i.categoryId===f.cat)&&(!q||(i.sku+' '+i.name).toLowerCase().includes(q))&&(!f.st||(f.st==='diff'?Math.abs(pi(i)-vi(i))>1e-9:map[itemStatus(i,pi(i))[0]]===f.st))).sort((a,b)=>a.sku.localeCompare(b.sku));
     const cols=[{h:'Mã hàng',f:r=>`<b>${esc(r.sku)}</b>`,x:r=>r.sku},{h:'Tên hàng hóa',f:r=>esc(r.name),x:r=>r.name},{h:'Danh mục',f:r=>esc(nm(db.categories,r.categoryId))},{h:'ĐVT',f:r=>esc(r.unit)},
-      ...whs.map(w=>nc(w.name,r=>m[r.id]?.[w.id]||0)),
-      nc('Tổng tồn',r=>qtyIn(m,r.id,f.wh)),nc('Tối thiểu',r=>r.minStock||0),nc('Giá trị (₫)',r=>qtyIn(m,r.id,f.wh)*(r.price||0),fmtMoney),
-      {h:'Trạng thái',f:r=>badge(...itemStatus(r,qtyIn(m,r.id,f.wh))),x:r=>itemStatus(r,qtyIn(m,r.id,f.wh))[1]}];
-    const tv=rows.reduce((a,r)=>a+qtyIn(m,r.id,f.wh)*(r.price||0),0);
-    return table(cols,rows,{foot:`<tr><td colspan="${cols.length-2}">Tổng giá trị tồn</td><td class="num">${fmtMoney(tv)}</td><td></td></tr>`});
+      nc('Kho nội bộ (thực tế)',pi),nc('Kho hóa đơn',vi),
+      {h:'Chênh lệch',c:'num',f:r=>{const d=Math.round((pi(r)-vi(r))*1000)/1000;return d===0?'<span class="muted">0</span>':`<span class="${d>0?'pos':'neg'}">${d>0?'+':''}${fmtNum(d)}</span>`},x:r=>pi(r)-vi(r)},
+      nc('Tối thiểu',r=>r.minStock||0),nc('Giá trị thực tế (₫)',r=>pi(r)*(r.price||0),fmtMoney),
+      {h:'Trạng thái',f:r=>badge(...itemStatus(r,pi(r))),x:r=>itemStatus(r,pi(r))[1]}];
+    const tv=rows.reduce((a,r)=>a+pi(r)*(r.price||0),0),tp=rows.reduce((a,r)=>a+pi(r),0),ti=rows.reduce((a,r)=>a+vi(r),0);
+    return table(cols,rows,{foot:`<tr><td colspan="4">Tổng</td><td class="num">${fmtNum(tp)}</td><td class="num">${fmtNum(ti)}</td><td class="num">${fmtNum(tp-ti)}</td><td></td><td class="num">${fmtMoney(tv)}</td><td></td></tr>`});
   }};
 
 /* ---- kiểm kê ---- */
@@ -822,16 +865,16 @@ PAGES['wh/stocktake']={t:'Kiểm kê',
   tbl(){
     const f=F(),rows=db.stocktakes.filter(s=>!f.wh||s.warehouseId===f.wh).sort(byDateDesc);
     const dsum=(s,sg)=>s.lines.reduce((a,l)=>{const d=l.actual-l.system;return a+(sg>0?Math.max(d,0):Math.min(d,0))},0);
-    return table([{h:'Số phiếu',f:r=>`<button class="lnk" data-act="take-view" data-id="${r.id}">${esc(r.code)}</button>`,x:r=>r.code},{h:'Ngày',f:r=>fmtDate(r.date),x:r=>r.date},{h:'Kho',f:r=>esc(whName(r.warehouseId))},nc('Số mặt hàng',r=>r.lines.length),nc('Thừa',r=>dsum(r,1)),nc('Thiếu',r=>dsum(r,-1)),{h:'Người lập',f:r=>esc(r.createdBy||'')},{h:'Ghi chú',f:r=>esc(r.note||'')},actCol(r=>`<button class="btn sm" data-act="take-view" data-id="${r.id}">Xem</button>`)],rows,{empty:'Chưa có phiếu kiểm kê.'});
+    return table([{h:'Số phiếu',f:r=>`<button class="lnk" data-act="take-view" data-id="${r.id}">${esc(r.code)}</button>`,x:r=>r.code},{h:'Ngày',f:r=>fmtDate(r.date),x:r=>r.date},{h:'Ghi nhận kho',f:whBadges,x:whsLabel},nc('Số mặt hàng',r=>r.lines.length),nc('Thừa',r=>dsum(r,1)),nc('Thiếu',r=>dsum(r,-1)),{h:'Người lập',f:r=>esc(r.createdBy||'')},{h:'Ghi chú',f:r=>esc(r.note||'')},actCol(r=>`<button class="btn sm" data-act="take-view" data-id="${r.id}">Xem</button>`)],rows,{empty:'Chưa có phiếu kiểm kê.'});
   }};
 function takeBody(){
-  return `<div class="fg3"><label class="f"><span>Kho kiểm kê</span><select class="in" data-tk="warehouseId">${db.warehouses.map(w=>`<option value="${w.id}" ${w.id===T.warehouseId?'selected':''}>${esc(w.name)}</option>`).join('')}</select></label><label class="f"><span>Ngày kiểm kê</span><input class="in" type="date" data-tk="date" value="${T.date}"></label><label class="f"><span>Danh mục</span><select class="in" data-tk="cat">${catOpts('Tất cả danh mục').map(([v,l])=>`<option value="${v}" ${v===T.cat?'selected':''}>${esc(l)}</option>`).join('')}</select></label><label class="f full"><span>Ghi chú</span><input class="in" data-tk="note" value="${esc(T.note)}"></label></div><p class="note">Nhập số lượng đếm thực tế. Dòng để trống sẽ không được kiểm kê. Chênh lệch sẽ được ghi nhận thành điều chỉnh tồn kho.</p><div id="take"></div>`;
+  return `<div class="fg3"><label class="f"><span>Kho kiểm kê (nội bộ = đếm thực tế; hóa đơn = đối chiếu sổ hóa đơn)</span><select class="in" data-tk="warehouseId">${db.warehouses.map(w=>`<option value="${w.id}" ${w.id===T.warehouseId?'selected':''}>${esc(w.name)}</option>`).join('')}</select></label><label class="f"><span>Ngày kiểm kê</span><input class="in" type="date" data-tk="date" value="${T.date}"></label><label class="f"><span>Danh mục</span><select class="in" data-tk="cat">${catOpts('Tất cả danh mục').map(([v,l])=>`<option value="${v}" ${v===T.cat?'selected':''}>${esc(l)}</option>`).join('')}</select></label><label class="f full"><span>Ghi chú</span><input class="in" data-tk="note" value="${esc(T.note)}"></label></div><p class="note">Nhập số lượng đếm thực tế. Dòng để trống sẽ không được kiểm kê. Chênh lệch sẽ được ghi nhận thành điều chỉnh tồn kho.</p><div id="take"></div>`;
 }
 function renderTake(){
   const m=stockMap(T.date),its=db.items.filter(i=>!T.cat||i.categoryId===T.cat).sort((a,b)=>a.sku.localeCompare(b.sku));
   $('#take').innerHTML=its.length?`<div class="tw" style="max-height:50vh"><table class="t"><thead><tr><th>Mã</th><th>Tên hàng</th><th>ĐVT</th><th class="num">Hệ thống</th><th class="num">Thực tế</th><th class="num">Chênh lệch</th></tr></thead><tbody>${its.map(i=>{const sys=m[i.id]?.[T.warehouseId]||0,a=T.actual[i.id];return `<tr><td>${esc(i.sku)}</td><td>${esc(i.name)}</td><td>${esc(i.unit)}</td><td class="num">${fmtNum(sys)}</td><td class="num"><input class="in take-in" type="number" step="any" min="0" data-t="${i.id}" data-sys="${sys}" value="${a??''}"></td><td class="num" id="df-${i.id}">${diffHtml(a,sys)}</td></tr>`}).join('')}</tbody></table></div>`:'<div class="empty">Không có hàng hóa.</div>';
 }
-ACT['take-new']=()=>{T={warehouseId:db.warehouses[0]?.id,date:todayStr(),cat:'',note:'',actual:{}};modal('Tạo phiếu kiểm kê',takeBody(),{size:'wide',footer:cancelBtn+'<button class="btn primary" data-act="take-save">💾 Lưu kiểm kê</button>'});renderTake()};
+ACT['take-new']=()=>{T={warehouseId:W_INT,date:todayStr(),cat:'',note:'',actual:{}};modal('Tạo phiếu kiểm kê',takeBody(),{size:'wide',footer:cancelBtn+'<button class="btn primary" data-act="take-save">💾 Lưu kiểm kê</button>'});renderTake()};
 ACT['take-save']=()=>{
   const m=stockMap(T.date),lines=[];
   db.items.forEach(i=>{const a=T.actual[i.id];if(a===undefined||a==='')return;if(!T.cat||i.categoryId===T.cat)lines.push({itemId:i.id,system:m[i.id]?.[T.warehouseId]||0,actual:num(a)})});
@@ -853,8 +896,8 @@ function receiptsPage(title,mode){
     head(){const w=can('write')&&mode==='list';return `<div class="bar">${fSearch('Tìm số phiếu / NCC / ghi chú…')}${fSel('wh','Kho',whOpts())}${fDate('from','Từ')}${fDate('to','Đến')}<div class="sp"></div><button class="btn" data-act="export" data-name="phieu-nhap">⬇ Excel</button>${w?'<button class="btn acc" data-act="receipt-new">＋ Tạo phiếu nhập</button>':''}</div>`},
     tbl(){
       const f=F(),q=(f.q||'').toLowerCase(),w=can('write');
-      const rows=db.receipts.filter(r=>(!f.wh||r.warehouseId===f.wh)&&(!f.from||r.date>=f.from)&&(!f.to||r.date<=f.to)&&(!q||(r.code+' '+nm(db.suppliers,r.supplierId)+' '+(r.note||'')+' '+(r.ref||'')).toLowerCase().includes(q))).sort(byDateDesc);
-      return table([{h:'Số phiếu',f:r=>slipLink('receipt',r),x:r=>r.code},{h:'Ngày',f:r=>fmtDate(r.date),x:r=>r.date},{h:'Nhà cung cấp',f:r=>esc(r.supplierId?nm(db.suppliers,r.supplierId):'—')},{h:'Kho',f:r=>esc(whName(r.warehouseId))},nc('Số dòng',r=>r.lines.length),nc('Tổng SL',r=>slipTotals(r).q),nc('Tổng tiền (₫)',r=>slipTotals(r).v,fmtMoney),{h:'Người lập',f:r=>esc(r.createdBy||'')},
+      const rows=db.receipts.filter(r=>(!f.wh||inWh(r,f.wh))&&(!f.from||r.date>=f.from)&&(!f.to||r.date<=f.to)&&(!q||(r.code+' '+nm(db.suppliers,r.supplierId)+' '+(r.note||'')+' '+(r.ref||'')).toLowerCase().includes(q))).sort(byDateDesc);
+      return table([{h:'Số phiếu',f:r=>slipLink('receipt',r),x:r=>r.code},{h:'Ngày',f:r=>fmtDate(r.date),x:r=>r.date},{h:'Số hóa đơn',f:r=>esc(r.ref||''),x:r=>r.ref||''},{h:'Nhà cung cấp',f:r=>esc(r.supplierId?nm(db.suppliers,r.supplierId):'—')},{h:'Ghi nhận kho',f:whBadges,x:whsLabel},nc('Số dòng',r=>r.lines.length),nc('Tổng SL',r=>slipTotals(r).q),nc('Tổng tiền (₫)',r=>slipTotals(r).v,fmtMoney),{h:'Người lập',f:r=>esc(r.createdBy||'')},
         actCol(r=>mode==='slip'?`<button class="btn sm" data-act="slip-view" data-k="receipt" data-id="${r.id}">Xem</button> <button class="btn sm" data-act="slip-print" data-k="receipt" data-id="${r.id}">In</button> <button class="btn sm" data-act="slip-pdf" data-k="receipt" data-id="${r.id}">PDF</button>`:`<button class="btn sm" data-act="slip-view" data-k="receipt" data-id="${r.id}">Xem</button>${w?` <button class="btn sm" data-act="slip-edit" data-k="receipt" data-id="${r.id}">Sửa</button> <button class="btn sm danger" data-act="slip-del" data-k="receipt" data-id="${r.id}">Xoá</button>`:''}`)],rows,{empty:'Chưa có phiếu nhập.'});
     }};
 }
@@ -863,8 +906,8 @@ function issuesPage(type,title,mode){
     head(){const w=can('write')&&mode==='list';return `<div class="bar">${fSearch('Tìm số phiếu / đối tượng / người nhận…')}${fSel('wh','Kho',whOpts())}${fDate('from','Từ')}${fDate('to','Đến')}<div class="sp"></div><button class="btn" data-act="export" data-name="phieu-xuat">⬇ Excel</button>${w?`<button class="btn acc" data-act="issue-new" data-preset="${type||'retail'}">＋ Tạo phiếu xuất${type==='retail'?' (khách lẻ)':type==='project'?' (dự án)':''}</button>`:''}</div>`},
     tbl(){
       const f=F(),q=(f.q||'').toLowerCase(),w=can('write');
-      const rows=db.issues.filter(r=>(!type||r.targetType===type)&&(!f.wh||r.warehouseId===f.wh)&&(!f.from||r.date>=f.from)&&(!f.to||r.date<=f.to)&&(!q||(r.code+' '+targetLabel(r.targetType,r.targetId)+' '+(r.receiver||'')+' '+(r.note||'')).toLowerCase().includes(q))).sort(byDateDesc);
-      return table([{h:'Số phiếu',f:r=>slipLink('issue',r),x:r=>r.code},{h:'Ngày',f:r=>fmtDate(r.date),x:r=>r.date},{h:'Loại',f:r=>r.targetType==='project'?badge('info','Dự án'):badge('mute','Khách lẻ'),x:r=>r.targetType==='project'?'Dự án':'Khách lẻ'},{h:'Đối tượng',f:r=>esc(targetLabel(r.targetType,r.targetId))},{h:'Người nhận',f:r=>esc(r.receiver||'')},{h:'Kho',f:r=>esc(whName(r.warehouseId))},nc('Tổng SL',r=>slipTotals(r).q),{h:'Người lập',f:r=>esc(r.createdBy||'')},
+      const rows=db.issues.filter(r=>(!type||r.targetType===type)&&(!f.wh||inWh(r,f.wh))&&(!f.from||r.date>=f.from)&&(!f.to||r.date<=f.to)&&(!q||(r.code+' '+targetLabel(r.targetType,r.targetId)+' '+(r.receiver||'')+' '+(r.note||'')+' '+(r.ref||'')).toLowerCase().includes(q))).sort(byDateDesc);
+      return table([{h:'Số phiếu',f:r=>slipLink('issue',r),x:r=>r.code},{h:'Ngày',f:r=>fmtDate(r.date),x:r=>r.date},{h:'Loại',f:r=>r.targetType==='project'?badge('info','Dự án'):badge('mute','Khách lẻ'),x:r=>r.targetType==='project'?'Dự án':'Khách lẻ'},{h:'Đối tượng',f:r=>esc(targetLabel(r.targetType,r.targetId))},{h:'Số hóa đơn',f:r=>esc(r.ref||''),x:r=>r.ref||''},{h:'Người nhận',f:r=>esc(r.receiver||'')},{h:'Ghi nhận kho',f:whBadges,x:whsLabel},nc('Tổng SL',r=>slipTotals(r).q),{h:'Người lập',f:r=>esc(r.createdBy||'')},
         actCol(r=>mode==='slip'?`<button class="btn sm" data-act="slip-view" data-k="issue" data-id="${r.id}">Xem</button> <button class="btn sm" data-act="slip-print" data-k="issue" data-id="${r.id}">In</button> <button class="btn sm" data-act="slip-pdf" data-k="issue" data-id="${r.id}">PDF</button>`:`<button class="btn sm" data-act="slip-view" data-k="issue" data-id="${r.id}">Xem</button>${w?` <button class="btn sm" data-act="slip-edit" data-k="issue" data-id="${r.id}">Sửa</button> <button class="btn sm danger" data-act="slip-del" data-k="issue" data-id="${r.id}">Xoá</button>`:''}`)],rows,{empty:'Chưa có phiếu xuất.'});
     }};
 }
@@ -875,8 +918,8 @@ function ledgerPage(kind,title){
     tbl(){
       const f=F(),q=(f.q||'').toLowerCase();
       const party=r=>isIn?(r.supplierId?nm(db.suppliers,r.supplierId):'—'):targetLabel(r.targetType,r.targetId);
-      const rows=db[kind].filter(r=>(!f.wh||r.warehouseId===f.wh)&&(!f.from||r.date>=f.from)&&(!f.to||r.date<=f.to)).flatMap(r=>r.lines.map(l=>({r,l,it:itemOf(l.itemId)||{sku:'?',name:'(đã xoá)',unit:''}}))).filter(x=>!q||(x.it.sku+' '+x.it.name+' '+x.r.code+' '+party(x.r)).toLowerCase().includes(q)).sort((a,b)=>byDateDesc(a.r,b.r));
-      return table([{h:'Ngày',f:x=>fmtDate(x.r.date),x:x=>x.r.date},{h:'Số phiếu',f:x=>slipLink(isIn?'receipt':'issue',x.r),x:x=>x.r.code},{h:'Mã hàng',f:x=>esc(x.it.sku)},{h:'Tên hàng hóa',f:x=>esc(x.it.name)},nc('Số lượng',x=>+x.l.qty||0),{h:'ĐVT',f:x=>esc(x.it.unit)},nc('Đơn giá (₫)',x=>+x.l.price||0,fmtMoney),nc('Thành tiền (₫)',x=>(+x.l.qty||0)*(+x.l.price||0),fmtMoney),{h:isIn?'Nhà cung cấp':'Đối tượng',f:x=>esc(party(x.r))},{h:'Kho',f:x=>esc(whName(x.r.warehouseId))}],rows,{empty:isIn?'Chưa có lịch sử nhập.':'Chưa có lịch sử xuất.'});
+      const rows=db[kind].filter(r=>(!f.wh||inWh(r,f.wh))&&(!f.from||r.date>=f.from)&&(!f.to||r.date<=f.to)).flatMap(r=>r.lines.map(l=>({r,l,it:itemOf(l.itemId)||{sku:'?',name:'(đã xoá)',unit:''}}))).filter(x=>!q||(x.it.sku+' '+x.it.name+' '+x.r.code+' '+party(x.r)).toLowerCase().includes(q)).sort((a,b)=>byDateDesc(a.r,b.r));
+      return table([{h:'Ngày',f:x=>fmtDate(x.r.date),x:x=>x.r.date},{h:'Số phiếu',f:x=>slipLink(isIn?'receipt':'issue',x.r),x:x=>x.r.code},{h:'Mã hàng',f:x=>esc(x.it.sku)},{h:'Tên hàng hóa',f:x=>esc(x.it.name)},nc('Số lượng',x=>+x.l.qty||0),{h:'ĐVT',f:x=>esc(x.it.unit)},nc('Đơn giá (₫)',x=>+x.l.price||0,fmtMoney),nc('Thành tiền (₫)',x=>(+x.l.qty||0)*(+x.l.price||0),fmtMoney),{h:isIn?'Nhà cung cấp':'Đối tượng',f:x=>esc(party(x.r))},{h:'Ghi nhận kho',f:x=>whBadges(x.r),x:x=>whsLabel(x.r)}],rows,{empty:isIn?'Chưa có lịch sử nhập.':'Chưa có lịch sử xuất.'});
     }};
 }
 PAGES['in/receipts']=receiptsPage('Phiếu nhập','list');PAGES['wh/in']=receiptsPage('Nhập kho','list');PAGES['slip/in']=receiptsPage('Phiếu nhập kho','slip');
@@ -896,47 +939,54 @@ function itemByText(t,exact){
   const c=db.items.filter(i=>i.name.toLowerCase()===t.toLowerCase());return c.length===1?c[0]:null;
 }
 function slipOpen(kind,id,preset){
-  const rec=id?(kind==='receipt'?by(db.receipts,id):by(db.issues,id)):null,w0=rec?.warehouseId||db.warehouses[0]?.id||'';
+  const rec=id?(kind==='receipt'?by(db.receipts,id):by(db.issues,id)):null;
   if(!db.items.length)return toast('Chưa có hàng hóa. Hãy thêm hàng hóa trước.','warn');
-  if(kind==='receipt')S={kind,id:id||null,date:rec?.date||todayStr(),warehouseId:w0,supplierId:rec?.supplierId||'',ref:rec?.ref||'',note:rec?.note||'',
+  const mode=rec?modeOf(slipWhs(rec)):(kind==='issue'&&preset==='retail'?'int':'both');
+  if(kind==='receipt')S={kind,id:id||null,date:rec?.date||todayStr(),mode,supplierId:rec?.supplierId||'',ref:rec?.ref||'',invoiceDate:rec?.invoiceDate||'',note:rec?.note||'',
     lines:rec?rec.lines.map(l=>({itemId:l.itemId,itemText:'',qty:l.qty,price:l.price||0,serialsText:(l.serials||[]).join('\n'),warranty:l.warranty||'',assetIds:[]})):[newLine()]};
   else{const orig={};if(rec)rec.lines.forEach(l=>{orig[l.itemId]=(orig[l.itemId]||0)+(+l.qty||0)});
-    S={kind,id:id||null,date:rec?.date||todayStr(),warehouseId:w0,origWh:rec?.warehouseId||null,orig,targetType:rec?.targetType||preset||'retail',targetId:rec?.targetId||'',targetText:rec?targetLabel(rec.targetType,rec.targetId):'',receiver:rec?.receiver||'',note:rec?.note||'',
+    S={kind,id:id||null,date:rec?.date||todayStr(),mode,origWhs:rec?slipWhs(rec):[],orig,targetType:rec?.targetType||preset||'retail',targetId:rec?.targetId||'',targetText:rec?targetLabel(rec.targetType,rec.targetId):'',receiver:rec?.receiver||'',ref:rec?.ref||'',invoiceDate:rec?.invoiceDate||'',note:rec?.note||'',
     lines:rec?rec.lines.map(l=>({itemId:l.itemId,itemText:'',qty:l.qty,price:0,serialsText:'',warranty:'',assetIds:[...(l.assetIds||[])]})):[newLine()]}}
   modal(`${id?'Sửa':'Tạo'} ${kind==='receipt'?'phiếu nhập kho':'phiếu xuất kho'}${rec?' – '+rec.code:''}`,slipBody(),{size:'wide',footer:cancelBtn+'<button class="btn primary" data-act="slip-save">💾 Lưu phiếu</button>'});
   renderLines();
 }
+const sWhs=()=>modeWhs(S.mode),sInt=()=>sWhs().includes(W_INT);
 function targetField(){
   const p=S.targetType==='project';
   return `<label class="f"><span>${p?'Khách hàng / Dự án':'Khách lẻ'} <small class="muted">– bấm để chọn hoặc gõ tên</small></span><input class="in" data-slip="targetText" data-cb="${S.targetType}" autocomplete="off" value="${esc(S.targetText)}" placeholder="${p?'Gõ mã / tên khách hàng để tìm…':'Gõ tên khách lẻ (chưa có sẽ tự thêm)'}"></label>`;
 }
 function slipBody(){
   const isR=S.kind==='receipt';
-  const wh=`<label class="f"><span>${isR?'Kho nhập':'Kho xuất'}</span><select class="in" data-slip="warehouseId">${db.warehouses.map(w=>`<option value="${w.id}" ${w.id===S.warehouseId?'selected':''}>${esc(w.name)}</option>`).join('')}</select></label>`;
+  const desc=isR
+    ?[['both','Cả hai kho','Hàng có hóa đơn đầu vào: tăng cả tồn hóa đơn và tồn thực tế'],['int','Chỉ Kho nội bộ','Hàng nhập thực tế, không có hóa đơn'],['inv','Chỉ Kho hóa đơn','Chỉ ghi nhận hóa đơn đầu vào, hàng chưa về / không nhập kho thực tế']]
+    :[['both','Cả hai kho','Xuất hàng kèm hóa đơn đầu ra: giảm cả tồn hóa đơn và tồn thực tế'],['int','Chỉ Kho nội bộ','Xuất hàng thực tế, không xuất hóa đơn'],['inv','Chỉ Kho hóa đơn','Chỉ xuất hóa đơn, không đổi tồn hàng thực tế']];
+  const modes=`<div class="f full"><span>Ghi nhận vào kho</span><div class="modes">${desc.map(([v,l,d])=>`<label class="mode ${S.mode===v?'on':''}"><span><input type="radio" name="whmode" value="${v}" data-slip="mode" ${S.mode===v?'checked':''}> <b>${l}</b></span><small>${d}</small></label>`).join('')}</div></div>`;
+  const inv=`<label class="f"><span>Số hóa đơn (nếu có)</span><input class="in" data-slip="ref" value="${esc(S.ref)}" placeholder="VD: 0001234"></label><label class="f"><span>Ngày hóa đơn</span><input class="in" type="date" data-slip="invoiceDate" value="${esc(S.invoiceDate)}"></label>`;
   const date=`<label class="f"><span>Ngày ${isR?'nhập':'xuất'}</span><input class="in" type="date" data-slip="date" value="${S.date}"></label>`;
   const head=isR
-    ?`${date}${wh}<label class="f"><span>Nhà cung cấp</span><select class="in" data-slip="supplierId"><option value="">— Không có / tồn đầu kỳ —</option>${db.suppliers.map(s=>`<option value="${s.id}" ${s.id===S.supplierId?'selected':''}>${esc(s.name)}</option>`).join('')}</select></label><label class="f"><span>Số chứng từ / hóa đơn</span><input class="in" data-slip="ref" value="${esc(S.ref)}"></label>`
-    :`${date}${wh}<label class="f"><span>Đối tượng nhận</span><select class="in" data-slip="targetType"><option value="retail" ${S.targetType==='retail'?'selected':''}>Khách lẻ</option><option value="project" ${S.targetType==='project'?'selected':''}>Khách hàng / Dự án</option></select></label><div id="tgt" class="contents">${targetField()}</div><label class="f"><span>Người nhận hàng</span><input class="in" data-slip="receiver" value="${esc(S.receiver)}"></label>`;
-  return `<div class="fg3">${head}<label class="f full"><span>${isR?'Ghi chú':'Mục đích / Ghi chú'}</span><input class="in" data-slip="note" value="${esc(S.note)}"></label></div>
+    ?`${date}<label class="f"><span>Nhà cung cấp</span><select class="in" data-slip="supplierId"><option value="">— Không có / tồn đầu kỳ —</option>${db.suppliers.map(s=>`<option value="${s.id}" ${s.id===S.supplierId?'selected':''}>${esc(s.name)}</option>`).join('')}</select></label>${inv}`
+    :`${date}<label class="f"><span>Đối tượng nhận</span><select class="in" data-slip="targetType"><option value="retail" ${S.targetType==='retail'?'selected':''}>Khách lẻ</option><option value="project" ${S.targetType==='project'?'selected':''}>Khách hàng / Dự án</option></select></label><div id="tgt" class="contents">${targetField()}</div><label class="f"><span>Người nhận hàng</span><input class="in" data-slip="receiver" value="${esc(S.receiver)}"></label>${inv}`;
+  return `<div class="fg3">${head}${modes}<label class="f full"><span>${isR?'Ghi chú':'Mục đích / Ghi chú'}</span><input class="in" data-slip="note" value="${esc(S.note)}"></label></div>
   <div class="lh"><b>Danh sách hàng hóa</b><button type="button" class="btn sm" data-act="ln-add">＋ Thêm dòng</button></div><div id="lines"></div><div class="tot" id="tot"></div>`;
 }
-function availOf(l){const it=itemOf(l.itemId);if(!it)return 0;let a=stockMap()[it.id]?.[S.warehouseId]||0;if(S.id&&S.kind==='issue'&&S.origWh===S.warehouseId)a+=S.orig[it.id]||0;return a}
+const availIn=(it,w,m)=>{let a=(m||stockMap())[it.id]?.[w]||0;if(S.id&&S.kind==='issue'&&S.origWhs.includes(w))a+=S.orig[it.id]||0;return a};
+function availOf(l){const it=itemOf(l.itemId);if(!it)return 0;const m=stockMap();return Math.min(...sWhs().map(w=>availIn(it,w,m)))}
 function renderLines(){
   const isR=S.kind==='receipt',m=stockMap();
   $('#lines').innerHTML=S.lines.map((l,i)=>{
     const it=itemOf(l.itemId),isIT=!!(it&&catOf(it.categoryId)?.isIT),tracked=isR?serialsOf(l).length>0:l.assetIds.length>0;
-    let avail=0;if(it&&!isR){avail=m[it.id]?.[S.warehouseId]||0;if(S.id&&S.origWh===S.warehouseId)avail+=S.orig[it.id]||0}
+    let avail=0,stkTxt='';if(it&&!isR){const per=sWhs().map(w=>[w,availIn(it,w,m)]);avail=Math.min(...per.map(x=>x[1]));stkTxt=per.map(([w,a])=>`${w===W_INV?'Hóa đơn':'Nội bộ'}: ${fmtNum(a)}`).join(' · ')}
     const item=`<input class="in itm" data-cb="item" data-idx="${i}" autocomplete="off" placeholder="Bấm để chọn hoặc gõ mã / tên hàng…" value="${esc(it?itemLabel(it):l.itemText||'')}" data-l="${i}:itemText" aria-label="Hàng hóa">`;
     const qty=`<input class="in" type="number" min="0" step="any" value="${l.qty}" data-l="${i}:qty" ${tracked?'readonly':''} aria-label="Số lượng">`;
     const del=`<button type="button" class="btn sm danger" data-act="ln-del" data-i="${i}" aria-label="Xoá dòng">✕</button>`;
     const main=isR
       ?`<div class="ln-main isr">${item}<span class="unit">${esc(it?.unit||'')}</span>${qty}<input class="in" type="number" min="0" step="any" value="${l.price}" data-l="${i}:price" placeholder="Đơn giá" aria-label="Đơn giá"><span class="amt">${fmtMoney(l.qty*l.price)}</span>${del}</div>`
-      :`<div class="ln-main">${item}<span class="unit">${esc(it?.unit||'')}</span>${it?`<span class="stk ${l.qty>avail?'bad':''}">Tồn: ${fmtNum(avail)}</span>`:'<span></span>'}${qty}${del}</div>`;
+      :`<div class="ln-main">${item}<span class="unit">${esc(it?.unit||'')}</span>${it?`<span class="stk ${l.qty>avail?'bad':''}">Tồn ${stkTxt}</span>`:'<span></span>'}${qty}${del}</div>`;
     let extra='';
-    if(it&&isIT&&isR)extra=`<div class="ser"><textarea class="in" placeholder="Serial / Service Tag – mỗi dòng một thiết bị (bỏ trống nếu không quản lý theo Serial)" data-l="${i}:serialsText">${esc(l.serialsText)}</textarea><label class="f"><span>Bảo hành (tháng)</span><input class="in" type="number" min="0" value="${esc(l.warranty)}" data-l="${i}:warranty"></label></div>`;
-    if(it&&isIT&&!isR){
-      const av=db.assets.filter(a=>a.itemId===it.id&&((a.status==='in_stock'&&a.warehouseId===S.warehouseId)||(S.id&&a.issueId===S.id)));
-      extra=`<details ${l.assetIds.length?'open':''}><summary>Chọn thiết bị theo Serial (${av.length} khả dụng) · <span class="asum">đã chọn ${l.assetIds.length}</span></summary><div class="alist">${av.map(a=>`<label class="chk"><input type="checkbox" data-as="${i}:${a.id}" ${l.assetIds.includes(a.id)?'checked':''}> ${esc(a.tag)} · ${esc(a.serial||'—')}</label>`).join('')||'<em class="muted">Không có thiết bị khả dụng trong kho này.</em>'}</div></details>`;
+    if(it&&isIT&&isR&&sInt())extra=`<div class="ser"><textarea class="in" placeholder="Serial / Service Tag – mỗi dòng một thiết bị (bỏ trống nếu không quản lý theo Serial)" data-l="${i}:serialsText">${esc(l.serialsText)}</textarea><label class="f"><span>Bảo hành (tháng)</span><input class="in" type="number" min="0" value="${esc(l.warranty)}" data-l="${i}:warranty"></label></div>`;
+    if(it&&isIT&&!isR&&sInt()){
+      const av=db.assets.filter(a=>a.itemId===it.id&&((a.status==='in_stock'&&a.warehouseId===W_INT)||(S.id&&a.issueId===S.id)));
+      extra=`<details ${l.assetIds.length?'open':''}><summary>Chọn thiết bị theo Serial (${av.length} khả dụng) · <span class="asum">đã chọn ${l.assetIds.length}</span></summary><div class="alist">${av.map(a=>`<label class="chk"><input type="checkbox" data-as="${i}:${a.id}" ${l.assetIds.includes(a.id)?'checked':''}> ${esc(a.tag)} · ${esc(a.serial||'—')}</label>`).join('')||'<em class="muted">Không có thiết bị khả dụng trong Kho nội bộ.</em>'}</div></details>`;
     }
     return `<div class="ln" data-i="${i}">${main}${extra}</div>`;
   }).join('');
@@ -978,7 +1028,7 @@ document.addEventListener('change',e=>{
   if(!S)return;
   if(el.dataset.slip){
     const k=el.dataset.slip;S[k]=el.value;
-    if(k==='warehouseId'){if(S.kind==='issue')S.lines.forEach(l=>l.assetIds=[]);renderLines()}
+    if(k==='mode'){if(!sInt())S.lines.forEach(l=>{l.assetIds=[];l.serialsText=''});$$('.mode').forEach(x=>x.classList.toggle('on',x.querySelector('input').checked));renderLines()}
     if(k==='targetType'){S.targetId='';S.targetText='';$('#tgt').innerHTML=targetField()}
     return;
   }
@@ -1007,31 +1057,31 @@ function collectLines(){
     const l=S.lines[i];if(!l.itemId&&!(l.itemText||'').trim())continue;
     if(!l.itemId){toast(`Dòng ${i+1}: hãy chọn đúng hàng hóa từ danh sách gợi ý.`,'error');return null}
     if(S.kind==='receipt'){
-      const serials=serialsOf(l),qty=serials.length||num(l.qty);
+      const serials=sInt()?serialsOf(l):[],qty=serials.length||num(l.qty);
       if(qty<=0){toast(`Dòng ${i+1}: số lượng phải lớn hơn 0.`,'error');return null}
       if(new Set(serials.map(s=>s.toLowerCase())).size!==serials.length){toast(`Dòng ${i+1}: Serial bị trùng nhau.`,'error');return null}
       out.push({itemId:l.itemId,qty,price:num(l.price),serials,warranty:num(l.warranty)});
     }else{
-      const qty=l.assetIds.length||num(l.qty);
+      const ids=sInt()?l.assetIds:[],qty=ids.length||num(l.qty);
       if(qty<=0){toast(`Dòng ${i+1}: số lượng phải lớn hơn 0.`,'error');return null}
-      out.push({itemId:l.itemId,qty,price:itemOf(l.itemId)?.price||0,assetIds:[...l.assetIds]});
+      out.push({itemId:l.itemId,qty,price:itemOf(l.itemId)?.price||0,assetIds:[...ids]});
     }
   }
   if(!out.length){toast('Phiếu chưa có hàng hóa.','error');return null}
   return out;
 }
 function saveReceipt(){
-  if(!S.warehouseId||!S.date)return toast('Chọn ngày và kho.','error');
+  if(!S.date)return toast('Chọn ngày nhập.','error');
   const lines=collectLines();if(!lines)return;
-  const data={date:S.date,warehouseId:S.warehouseId,supplierId:S.supplierId,ref:S.ref,note:S.note,lines};
+  const data={date:S.date,whs:sWhs(),supplierId:S.supplierId,ref:(S.ref||'').trim(),invoiceDate:S.invoiceDate||'',note:S.note,lines};
   if(transact(()=>{
     const r=S.id?by(db.receipts,S.id):null;
-    if(r){Object.assign(r,data);syncReceiptAssets(r)}else _newReceipt(data);
+    if(r){Object.assign(r,data);delete r.warehouseId;syncReceiptAssets(r)}else _newReceipt(data);
     lines.forEach(l=>{if(l.price>0)itemOf(l.itemId).price=l.price});
   }))done('Đã lưu phiếu nhập');
 }
 function saveIssue(){
-  if(!S.warehouseId||!S.date)return toast('Chọn ngày và kho.','error');
+  if(!S.date)return toast('Chọn ngày xuất.','error');
   const tText=(S.targetText||'').trim();
   if(!tText)return toast(S.targetType==='project'?'Chọn khách hàng / dự án.':'Nhập tên khách lẻ.','error');
   let proj=null;
@@ -1040,9 +1090,9 @@ function saveIssue(){
   if(transact(()=>{
     let tid=proj?proj.id:'';
     if(S.targetType==='retail'){let c=db.retail.find(x=>norm(x.name)===norm(tText));if(!c){c={id:uid('rt'),name:tText,phone:'',dept:'',note:''};db.retail.push(c)}tid=c.id}
-    const data={date:S.date,warehouseId:S.warehouseId,targetType:S.targetType,targetId:tid,receiver:S.receiver,note:S.note,lines};
+    const data={date:S.date,whs:sWhs(),targetType:S.targetType,targetId:tid,receiver:S.receiver,ref:(S.ref||'').trim(),invoiceDate:S.invoiceDate||'',note:S.note,lines};
     const r=S.id?by(db.issues,S.id):null;
-    if(r){revertIssueAssets(r);Object.assign(r,data);applyIssueAssets(r)}else _newIssue(data);
+    if(r){revertIssueAssets(r);Object.assign(r,data);delete r.warehouseId;applyIssueAssets(r)}else _newIssue(data);
   }))done('Đã lưu phiếu xuất');
 }
 
@@ -1072,7 +1122,7 @@ PAGES['slip/pdf']={t:'Export PDF',
   tbl(){
     const f=F(),k=f.k||'receipt',from=f.from??dAgo(30),to=f.to??todayStr();
     const rows=(k==='receipt'?db.receipts:db.issues).filter(r=>(!from||r.date>=from)&&(!to||r.date<=to)).sort(byDateDesc);
-    return table([{h:'<input type="checkbox" data-act="pick-all" checked aria-label="Chọn tất cả">',noexp:1,f:r=>`<input type="checkbox" class="pick" value="${r.id}" checked>`},{h:'Số phiếu',f:r=>slipLink(k,r)},{h:'Ngày',f:r=>fmtDate(r.date)},{h:k==='receipt'?'Nhà cung cấp':'Đối tượng',f:r=>esc(k==='receipt'?(r.supplierId?nm(db.suppliers,r.supplierId):'—'):targetLabel(r.targetType,r.targetId))},{h:'Kho',f:r=>esc(whName(r.warehouseId))},nc('Tổng SL',r=>slipTotals(r).q)],rows,{empty:'Không có phiếu trong khoảng thời gian này.'});
+    return table([{h:'<input type="checkbox" data-act="pick-all" checked aria-label="Chọn tất cả">',noexp:1,f:r=>`<input type="checkbox" class="pick" value="${r.id}" checked>`},{h:'Số phiếu',f:r=>slipLink(k,r)},{h:'Ngày',f:r=>fmtDate(r.date)},{h:k==='receipt'?'Nhà cung cấp':'Đối tượng',f:r=>esc(k==='receipt'?(r.supplierId?nm(db.suppliers,r.supplierId):'—'):targetLabel(r.targetType,r.targetId))},{h:'Ghi nhận kho',f:whBadges,x:whsLabel},nc('Tổng SL',r=>slipTotals(r).q)],rows,{empty:'Không có phiếu trong khoảng thời gian này.'});
   }};
 ACT['pick-all']=el=>$$('.pick').forEach(c=>c.checked=el.checked);
 const pickedSlips=()=>{const k=F().k||'receipt';return{k,list:$$('.pick:checked').map(c=>slipRec(k,c.value)).filter(Boolean)}};
@@ -1114,7 +1164,6 @@ function assetForm(catId,id){
   modal(a?`Sửa tài sản ${a.tag}`:'Thêm tài sản',`<form id="mf" data-submit="asset-save" data-id="${id||''}"><div class="fg">
     ${sel('itemId','Hàng hóa / Model',(a?db.items.filter(i=>i.id===a.itemId):items).map(i=>[i.id,itemLabel(i)]),a?.itemId,{req:1,full:1,attrs:a?'disabled':''})}
     ${inp('serial','Serial / Service Tag',a?.serial||'')}${inp('spec','Cấu hình / Mô tả',a?.spec||'',{ph:'VD: i7 / 16GB / 512GB'})}
-    ${a?'':sel('warehouseId','Kho',db.warehouses.map(w=>[w.id,w.name]),db.warehouses[0]?.id)}
     ${a?'':sel('status','Trạng thái ban đầu',[['in_stock','Trong kho'],['assigned','Đã cấp phát']],'in_stock')}
     ${inp('purchaseDate','Ngày mua',a?.purchaseDate||'',{type:'date'})}${inp('warrantyEnd','Hết bảo hành',a?.warrantyEnd||'',{type:'date'})}
     ${a?'':holderSelect('')}
@@ -1131,7 +1180,7 @@ SUB['asset-save']=form=>{
       Object.assign(a,{serial:d.serial.trim(),spec:d.spec||'',purchaseDate:d.purchaseDate||'',warrantyEnd:d.warrantyEnd||'',note:d.note||''});addHist(a,'Cập nhật','Chỉnh sửa thông tin');return}
     const serial=d.serial.trim();
     if(serial&&db.assets.some(x=>x.itemId===d.itemId&&(x.serial||'').toLowerCase()===serial.toLowerCase()))throw new Error('Serial đã tồn tại.');
-    const a={id:uid('a'),tag:nextTag(),itemId:d.itemId,serial,spec:d.spec||'',status:'in_stock',counted:true,warehouseId:d.warehouseId,holder:null,issueId:null,receiptId:null,purchaseDate:d.purchaseDate||'',warrantyEnd:d.warrantyEnd||'',note:d.note||'',history:[]};
+    const a={id:uid('a'),tag:nextTag(),itemId:d.itemId,serial,spec:d.spec||'',status:'in_stock',counted:true,warehouseId:W_INT,holder:null,issueId:null,receiptId:null,purchaseDate:d.purchaseDate||'',warrantyEnd:d.warrantyEnd||'',note:d.note||'',history:[]};
     if(d.status==='assigned'){
       if(!d.holder)throw new Error('Chọn người dùng / dự án đang giữ thiết bị.');
       const [type,hid]=d.holder.split(':');a.status='assigned';a.counted=false;a.holder={type,id:hid};addHist(a,'Thêm thủ công',`Đang cấp phát cho ${targetLabel(type,hid)}`);
@@ -1148,12 +1197,12 @@ ACT['asset-act']=el=>{
   const a=by(db.assets,el.dataset.id);if(!a)return;
   const acts={in_stock:[['repair','Gửi sửa chữa'],['retire','Thanh lý / loại bỏ']],assigned:[['return','Thu hồi về kho'],['repair','Gửi sửa chữa'],['retire','Thanh lý / loại bỏ']],repair:[['fixed','Sửa xong – nhập lại kho'],['retire','Thanh lý / loại bỏ']],retired:[]}[a.status];
   if(!acts.length)return toast('Thiết bị đã thanh lý, không còn thao tác nào.','warn');
-  modal(`Thao tác – ${a.tag}`,`<form id="mf" data-submit="asset-act" data-id="${a.id}"><p class="note">${esc(nm(db.items,a.itemId))} · ${badge(...ST[a.status])}${a.status==='assigned'?' · '+esc(holderLabel(a)):''}<br>Muốn cấp phát thiết bị đang trong kho, hãy tạo <b>Phiếu xuất</b> và chọn Serial.</p><div class="fg">${sel('act','Thao tác',acts,acts[0][0],{full:1})}${sel('warehouseId','Kho nhận lại (khi thu hồi / sửa xong)',db.warehouses.map(w=>[w.id,w.name]),a.warehouseId)}${inp('date','Ngày',todayStr(),{type:'date'})}${txa('note','Ghi chú','',{full:1})}</div></form>`,{footer:cancelBtn+`<button class="btn primary" form="mf">Xác nhận</button>`});
+  modal(`Thao tác – ${a.tag}`,`<form id="mf" data-submit="asset-act" data-id="${a.id}"><p class="note">${esc(nm(db.items,a.itemId))} · ${badge(...ST[a.status])}${a.status==='assigned'?' · '+esc(holderLabel(a)):''}<br>Thiết bị IT được quản lý ở <b>Kho nội bộ</b> (hàng thực tế). Muốn cấp phát thiết bị đang trong kho, hãy tạo <b>Phiếu xuất</b> (ghi nhận vào Kho nội bộ) và chọn Serial.</p><div class="fg">${sel('act','Thao tác',acts,acts[0][0],{full:1})}${inp('date','Ngày',todayStr(),{type:'date'})}${txa('note','Ghi chú','',{full:1})}</div></form>`,{footer:cancelBtn+`<button class="btn primary" form="mf">Xác nhận</button>`});
 };
 SUB['asset-act']=form=>{
   const d=fd(form);
   const ok=transact(()=>{
-    const a=by(db.assets,form.dataset.id),w=d.warehouseId||a.warehouseId,date=d.date||todayStr(),n=d.note?` – ${d.note}`:'';
+    const a=by(db.assets,form.dataset.id),w=W_INT,date=d.date||todayStr(),n=d.note?` – ${d.note}`:'';
     if(d.act==='return'){if(!a.counted){pushAdj(a.itemId,w,1,`Thu hồi ${a.tag}`,date);a.counted=true}a.status='in_stock';a.holder=null;a.issueId=null;a.warehouseId=w;addHist(a,'Thu hồi',`Về ${whName(w)}${n}`,date)}
     else if(d.act==='repair'){a.status='repair';addHist(a,'Sửa chữa',`Gửi sửa chữa${n}`,date)}
     else if(d.act==='fixed'){if(!a.counted){pushAdj(a.itemId,w,1,`Sửa xong ${a.tag}`,date);a.counted=true}a.status='in_stock';a.holder=null;a.issueId=null;a.warehouseId=w;addHist(a,'Hoàn tất sửa chữa',`Nhập lại ${whName(w)}${n}`,date)}
@@ -1175,10 +1224,10 @@ PAGES['it/history']={t:'Asset History',
 const firstOfYear=()=>`${new Date().getFullYear()}-01-01`;
 const periodSub=(from,to)=>`Kỳ: ${from?fmtDate(from):'…'} – ${to?fmtDate(to):'…'}`;
 PAGES['rpt/monthly']={t:'Báo cáo Nhập – Xuất – Tồn theo tháng',
-  sub(){const f=F();return `Tháng ${(f.month||todayStr().slice(0,7)).split('-').reverse().join('/')} · ${f.wh?whName(f.wh):'Tất cả kho'}`},
-  head(){return `<div class="bar">${fMonth('month','Tháng',todayStr().slice(0,7))}${fSel('wh','Kho',whOpts())}${fSel('cat','Danh mục',catOpts())}<div class="sp"></div>${rptBtns('nxt-thang')}</div>`},
+  sub(){const f=F();return `Tháng ${(f.month||todayStr().slice(0,7)).split('-').reverse().join('/')} · ${whName(f.wh||W_INT)}`},
+  head(){return `<div class="bar">${fMonth('month','Tháng',todayStr().slice(0,7))}${fSel('wh','Kho',stockWhOpts())}${fSel('cat','Danh mục',catOpts())}<div class="sp"></div>${rptBtns('nxt-thang')}</div>`},
   tbl(){
-    const f=F(),mk=f.month||todayStr().slice(0,7),from=mk+'-01',to=addDays(addMonths(from,1),-1),wh=f.wh;
+    const f=F(),mk=f.month||todayStr().slice(0,7),from=mk+'-01',to=addDays(addMonths(from,1),-1),wh=f.wh||W_INT;
     const op=stockMap(from,true),cl=stockMap(to),fi=flow('receipts',from,to,wh),fo=flow('issues',from,to,wh);
     const rows=db.items.filter(i=>!f.cat||i.categoryId===f.cat).map(i=>{const o=qtyIn(op,i.id,wh),c=qtyIn(cl,i.id,wh),a=fi[i.id]?.qty||0,b=fo[i.id]?.qty||0;return{i,o,a,b,adj:Math.round((c-o-a+b)*1000)/1000,c}}).filter(r=>r.o||r.a||r.b||r.adj||r.c);
     const sum=k=>rows.reduce((s,r)=>s+r[k],0);
@@ -1190,10 +1239,10 @@ function issueReport(type,title){
   const targets=()=>type==='project'?db.projects.map(p=>[p.id,`${p.code} – ${p.name}`]):db.retail.map(c=>[c.id,c.name]);
   return{t:title,
     sub(){const f=F();return `${f.target?targetLabel(type,f.target):'Tất cả'} · ${periodSub(f.from??firstOfYear(),f.to??todayStr())}`},
-    head(){return `<div class="bar">${fSel('target',type==='project'?'Dự án':'Khách lẻ',[['',type==='project'?'Tất cả dự án':'Tất cả khách lẻ'],...targets()])}${fDate('from','Từ',firstOfYear())}${fDate('to','Đến',todayStr())}<div class="sp"></div>${rptBtns(type==='project'?'bao-cao-du-an':'bao-cao-khach-le')}</div>`},
+    head(){return `<div class="bar">${fSel('target',type==='project'?'Dự án':'Khách lẻ',[['',type==='project'?'Tất cả dự án':'Tất cả khách lẻ'],...targets()])}${fSel('wh','Ghi nhận kho',whOpts('Tất cả (hóa đơn + nội bộ)'))}${fDate('from','Từ',firstOfYear())}${fDate('to','Đến',todayStr())}<div class="sp"></div>${rptBtns(type==='project'?'bao-cao-du-an':'bao-cao-khach-le')}</div>`},
     tbl(){
       const f=F(),from=f.from??firstOfYear(),to=f.to??todayStr(),agg={};
-      db.issues.forEach(r=>{if(r.targetType!==type||(f.target&&r.targetId!==f.target)||(from&&r.date<from)||(to&&r.date>to))return;
+      db.issues.forEach(r=>{if(r.targetType!==type||(f.target&&r.targetId!==f.target)||(f.wh&&!inWh(r,f.wh))||(from&&r.date<from)||(to&&r.date>to))return;
         r.lines.forEach(l=>{const k=r.targetId+'|'+l.itemId,x=(agg[k]??={tid:r.targetId,iid:l.itemId,qty:0,val:0,slips:new Set()});x.qty+=+l.qty||0;x.val+=(+l.qty||0)*(+l.price||0);x.slips.add(r.id)})});
       const rows=Object.values(agg).sort((a,b)=>targetLabel(type,a.tid).localeCompare(targetLabel(type,b.tid))||(itemOf(a.iid)?.sku||'').localeCompare(itemOf(b.iid)?.sku||''));
       const tot=rows.reduce((s,r)=>({q:s.q+r.qty,v:s.v+r.val}),{q:0,v:0}),nT=new Set(rows.map(r=>r.tid)).size;
@@ -1202,7 +1251,7 @@ function issueReport(type,title){
     },
     tm(){
       const f=F(),from=f.from??firstOfYear(),to=f.to??todayStr(),agg={};
-      db.issues.forEach(r=>{if(r.targetType!==type||(f.target&&r.targetId!==f.target)||(from&&r.date<from)||(to&&r.date>to))return;r.lines.forEach(l=>{agg[r.targetId]=(agg[r.targetId]||0)+(+l.qty||0)*(+l.price||0)})});
+      db.issues.forEach(r=>{if(r.targetType!==type||(f.target&&r.targetId!==f.target)||(f.wh&&!inWh(r,f.wh))||(from&&r.date<from)||(to&&r.date>to))return;r.lines.forEach(l=>{agg[r.targetId]=(agg[r.targetId]||0)+(+l.qty||0)*(+l.price||0)})});
       const top=Object.entries(agg).sort((a,b)=>b[1]-a[1]).slice(0,10);
       chart('c1',{type:'bar',data:{labels:top.map(([id])=>targetLabel(type,id)),datasets:[{label:'Giá trị (₫)',data:top.map(x=>x[1]),backgroundColor:PAL[0]}]},options:baseOpt({plugins:{legend:{display:false}}})});
     }};
@@ -1210,8 +1259,8 @@ function issueReport(type,title){
 PAGES['rpt/project']=issueReport('project','Báo cáo theo khách hàng / dự án');
 PAGES['rpt/retail']=issueReport('retail','Báo cáo theo khách lẻ');
 PAGES['rpt/category']={t:'Báo cáo theo loại thiết bị',
-  sub(){const f=F();return `${f.wh?whName(f.wh):'Tất cả kho'} · ${periodSub(f.from??firstOfYear(),f.to??todayStr())}`},
-  head(){return `<div class="bar">${fSel('wh','Kho',whOpts())}${fDate('from','Từ',firstOfYear())}${fDate('to','Đến',todayStr())}<div class="sp"></div>${rptBtns('bao-cao-loai-thiet-bi')}</div>`},
+  sub(){const f=F();return `${whName(f.wh||W_INT)} · ${periodSub(f.from??firstOfYear(),f.to??todayStr())}`},
+  head(){return `<div class="bar">${fSel('wh','Kho',stockWhOpts())}${fDate('from','Từ',firstOfYear())}${fDate('to','Đến',todayStr())}<div class="sp"></div>${rptBtns('bao-cao-loai-thiet-bi')}</div>`},
   data(){
     const f=F(),from=f.from??firstOfYear(),to=f.to??todayStr(),m=stockMap(),fi=flow('receipts',from,to,f.wh),fo=flow('issues',from,to,f.wh);
     return db.categories.map(c=>{const its=db.items.filter(i=>i.categoryId===c.id),as=db.assets.filter(a=>itemOf(a.itemId)?.categoryId===c.id);
@@ -1228,11 +1277,11 @@ PAGES['rpt/category']={t:'Báo cáo theo loại thiết bị',
     const v=rows.filter(r=>r.v>0);chart('c2',{type:'doughnut',data:{labels:v.map(r=>r.c.name),datasets:[{data:v.map(r=>r.v),backgroundColor:PAL}]},options:baseOpt()});
   }};
 PAGES['rpt/inout']={t:'Báo cáo Nhập / Xuất',
-  sub(){const f=F(),m=addMonths(todayStr().slice(0,8)+'01',-5);return `${(f.g||'month')==='month'?'Theo tháng':'Theo ngày'} · ${f.wh?whName(f.wh):'Tất cả kho'} · ${periodSub(f.from??m,f.to??todayStr())}`},
-  head(){const m=addMonths(todayStr().slice(0,8)+'01',-5);return `<div class="bar">${fSel('g','Nhóm theo',[['month','Theo tháng'],['day','Theo ngày']])}${fSel('wh','Kho',whOpts())}${fDate('from','Từ',m)}${fDate('to','Đến',todayStr())}<div class="sp"></div>${rptBtns('bao-cao-nhap-xuat')}</div>`},
+  sub(){const f=F(),m=addMonths(todayStr().slice(0,8)+'01',-5);return `${(f.g||'month')==='month'?'Theo tháng':'Theo ngày'} · ${whName(f.wh||W_INT)} · ${periodSub(f.from??m,f.to??todayStr())}`},
+  head(){const m=addMonths(todayStr().slice(0,8)+'01',-5);return `<div class="bar">${fSel('g','Nhóm theo',[['month','Theo tháng'],['day','Theo ngày']])}${fSel('wh','Kho',stockWhOpts())}${fDate('from','Từ',m)}${fDate('to','Đến',todayStr())}<div class="sp"></div>${rptBtns('bao-cao-nhap-xuat')}</div>`},
   data(){
     const f=F(),m=addMonths(todayStr().slice(0,8)+'01',-5),from=f.from??m,to=f.to??todayStr(),len=(f.g||'month')==='month'?7:10,agg={};
-    const put=(kind,r)=>{if((from&&r.date<from)||(to&&r.date>to)||(f.wh&&r.warehouseId!==f.wh))return;const k=r.date.slice(0,len),x=(agg[k]??={k,iq:0,iv:0,oq:0,ov:0});r.lines.forEach(l=>{const q=+l.qty||0,v=q*(+l.price||0);if(kind==='in'){x.iq+=q;x.iv+=v}else{x.oq+=q;x.ov+=v}})};
+    const put=(kind,r)=>{if((from&&r.date<from)||(to&&r.date>to)||!inWh(r,f.wh||W_INT))return;const k=r.date.slice(0,len),x=(agg[k]??={k,iq:0,iv:0,oq:0,ov:0});r.lines.forEach(l=>{const q=+l.qty||0,v=q*(+l.price||0);if(kind==='in'){x.iq+=q;x.iv+=v}else{x.oq+=q;x.ov+=v}})};
     db.receipts.forEach(r=>put('in',r));db.issues.forEach(r=>put('out',r));
     return Object.values(agg).sort((a,b)=>a.k.localeCompare(b.k));
   },
@@ -1242,13 +1291,14 @@ PAGES['rpt/inout']={t:'Báo cáo Nhập / Xuất',
   },
   tm(){const rows=PAGES['rpt/inout'].data();chart('c1',{type:'bar',data:{labels:rows.map(r=>r.k.length===7?mLabel(r.k):fmtDate(r.k).slice(0,5)),datasets:[{label:'Nhập',data:rows.map(r=>r.iq),backgroundColor:PAL[3]},{label:'Xuất',data:rows.map(r=>r.oq),backgroundColor:PAL[0]}]},options:baseOpt({scales:{y:{beginAtZero:true}}})})}};
 PAGES['rpt/stock']={t:'Báo cáo tồn kho',
-  sub(){const f=F();return `Tồn tại ngày ${fmtDate(f.asof||todayStr())} · ${f.wh?whName(f.wh):'Tất cả kho'}`},
-  head(){return `<div class="bar">${fDate('asof','Tồn tại ngày',todayStr())}${fSel('wh','Kho',whOpts())}${fSel('cat','Danh mục',catOpts())}<div class="sp"></div>${rptBtns('bao-cao-ton-kho')}</div>`},
+  sub(){const f=F();return `Tồn tại ngày ${fmtDate(f.asof||todayStr())} · Kho nội bộ (thực tế) và Kho hóa đơn`},
+  head(){return `<div class="bar">${fDate('asof','Tồn tại ngày',todayStr())}${fSel('cat','Danh mục',catOpts())}${fSel('st','Hiển thị',[['','Tất cả mặt hàng có tồn'],['diff','Chỉ hàng hóa đơn ≠ thực tế']])}<div class="sp"></div>${rptBtns('bao-cao-ton-kho')}</div>`},
   tbl(){
-    const f=F(),m=stockMap(f.asof||todayStr()),rows=db.items.filter(i=>!f.cat||i.categoryId===f.cat).map(i=>({i,q:qtyIn(m,i.id,f.wh)})).filter(r=>r.q!==0).sort((a,b)=>a.i.sku.localeCompare(b.i.sku));
-    const tq=rows.reduce((s,r)=>s+r.q,0),tv=rows.reduce((s,r)=>s+r.q*(r.i.price||0),0);
-    return `<div class="kpis">${kpi('Số mã còn tồn',rows.length)}${kpi('Tổng số lượng',fmtNum(tq),'','info')}${kpi('Giá trị tồn (₫)',fmtMoney(tv),'','acc')}</div>`+
-    table([{h:'Mã hàng',f:r=>`<b>${esc(r.i.sku)}</b>`,x:r=>r.i.sku},{h:'Tên hàng hóa',f:r=>esc(r.i.name),x:r=>r.i.name},{h:'Danh mục',f:r=>esc(nm(db.categories,r.i.categoryId))},{h:'ĐVT',f:r=>esc(r.i.unit)},nc('Tồn',r=>r.q),nc('Đơn giá (₫)',r=>r.i.price||0,fmtMoney),nc('Giá trị (₫)',r=>r.q*(r.i.price||0),fmtMoney)],rows,{empty:'Không có hàng tồn.',foot:`<tr><td colspan="4">Tổng</td><td class="num">${fmtNum(tq)}</td><td></td><td class="num">${fmtMoney(tv)}</td></tr>`});
+    const f=F(),m=stockMap(f.asof||todayStr()),pi=i=>m[i.id]?.[W_INT]||0,vi=i=>m[i.id]?.[W_INV]||0;
+    const rows=db.items.filter(i=>!f.cat||i.categoryId===f.cat).map(i=>({i,a:pi(i),b:vi(i)})).filter(r=>(r.a!==0||r.b!==0)&&(f.st!=='diff'||Math.abs(r.a-r.b)>1e-9)).sort((x,y)=>x.i.sku.localeCompare(y.i.sku));
+    const ta=rows.reduce((s,r)=>s+r.a,0),tb=rows.reduce((s,r)=>s+r.b,0),va=rows.reduce((s,r)=>s+r.a*(r.i.price||0),0),vb=rows.reduce((s,r)=>s+r.b*(r.i.price||0),0);
+    return `<div class="kpis">${kpi('Số mã còn tồn',rows.length)}${kpi('Tồn thực tế (Kho nội bộ)',fmtNum(ta),fmtMoney(va)+' ₫','info')}${kpi('Tồn theo hóa đơn',fmtNum(tb),fmtMoney(vb)+' ₫','acc')}${kpi('Chênh lệch (thực tế − hóa đơn)',(ta-tb>0?'+':'')+fmtNum(ta-tb),'','warn')}</div>`+
+    table([{h:'Mã hàng',f:r=>`<b>${esc(r.i.sku)}</b>`,x:r=>r.i.sku},{h:'Tên hàng hóa',f:r=>esc(r.i.name),x:r=>r.i.name},{h:'Danh mục',f:r=>esc(nm(db.categories,r.i.categoryId))},{h:'ĐVT',f:r=>esc(r.i.unit)},nc('Kho nội bộ (thực tế)',r=>r.a),nc('Kho hóa đơn',r=>r.b),nc('Chênh lệch',r=>Math.round((r.a-r.b)*1000)/1000),nc('Đơn giá (₫)',r=>r.i.price||0,fmtMoney),nc('Giá trị thực tế (₫)',r=>r.a*(r.i.price||0),fmtMoney),nc('Giá trị hóa đơn (₫)',r=>r.b*(r.i.price||0),fmtMoney)],rows,{empty:'Không có hàng tồn.',foot:`<tr><td colspan="4">Tổng</td><td class="num">${fmtNum(ta)}</td><td class="num">${fmtNum(tb)}</td><td class="num">${fmtNum(ta-tb)}</td><td></td><td class="num">${fmtMoney(va)}</td><td class="num">${fmtMoney(vb)}</td></tr>`});
   }};
 
 /* =====================================================================
@@ -1265,9 +1315,9 @@ const CRUD={
   project:{col:'projects',pre:'p',t:'Khách hàng / Dự án',fields:[['code','Mã KH / dự án',1],['name','Tên khách hàng / dự án',1],['taxId','Mã số thuế'],['address','Địa chỉ'],['customer','Khách hàng'],['contact','Người liên hệ'],['note','Ghi chú']],unique:'code',upload:['up-kh','Upload file Khách hàng'],
     extra:()=>[nc('Số phiếu xuất',r=>nIss('project',r.id).length),nc('Thiết bị đang giữ',r=>db.assets.filter(a=>a.status==='assigned'&&a.holder&&a.holder.type==='project'&&a.holder.id===r.id).length)],
     used:id=>db.issues.some(i=>i.targetType==='project'&&i.targetId===id)||db.assets.some(a=>a.holder&&a.holder.type==='project'&&a.holder.id===id)},
-  warehouse:{col:'warehouses',pre:'w',t:'Kho',admin:1,fields:[['name','Tên kho',1],['location','Vị trí / địa chỉ'],['keeper','Thủ kho']],
-    extra:()=>{const m=stockMap();return[nc('Số mã có tồn',r=>db.items.filter(i=>(m[i.id]?.[r.id]||0)>0).length),nc('Phiếu nhập',r=>db.receipts.filter(x=>x.warehouseId===r.id).length),nc('Phiếu xuất',r=>db.issues.filter(x=>x.warehouseId===r.id).length)]},
-    used:id=>db.receipts.some(r=>r.warehouseId===id)||db.issues.some(r=>r.warehouseId===id)||db.stocktakes.some(r=>r.warehouseId===id)||db.adjustments.some(r=>r.warehouseId===id)||db.assets.some(a=>a.warehouseId===id)},
+  warehouse:{col:'warehouses',pre:'w',t:'Kho',admin:1,noAdd:true,noDel:true,note:'Hệ thống dùng <b>2 kho cố định</b>: <b>Kho nội bộ</b> = tồn hàng thực tế (dùng cho cảnh báo hết hàng, cấp phát thiết bị IT, kiểm kê); <b>Kho hóa đơn</b> = số lượng theo hóa đơn đầu vào / đầu ra. Mỗi phiếu nhập / xuất chọn ghi nhận vào cả hai kho hoặc chỉ một kho.',fields:[['name','Tên kho',1],['location','Vị trí / địa chỉ'],['keeper','Thủ kho']],
+    extra:()=>{const m=stockMap();return[nc('Số mã có tồn',r=>db.items.filter(i=>(m[i.id]?.[r.id]||0)>0).length),nc('Phiếu nhập',r=>db.receipts.filter(x=>inWh(x,r.id)).length),nc('Phiếu xuất',r=>db.issues.filter(x=>inWh(x,r.id)).length)]},
+    used:id=>db.receipts.some(r=>inWh(r,id))||db.issues.some(r=>inWh(r,id))||db.stocktakes.some(r=>r.warehouseId===id)||db.adjustments.some(r=>r.warehouseId===id)||db.assets.some(a=>a.warehouseId===id)},
   category:{col:'categories',pre:'c',t:'Danh mục',admin:1,fields:[['name','Tên danh mục',1]],flags:[['isIT','Thuộc nhóm IT Asset (quản lý theo Serial, có mục riêng trên menu)']],
     extra:()=>[nc('Số mã hàng',r=>db.items.filter(i=>i.categoryId===r.id).length)],
     used:id=>db.items.some(i=>i.categoryId===id)}
@@ -1275,10 +1325,10 @@ const CRUD={
 function crudPage(key){
   const C=CRUD[key],canEdit=()=>C.admin?can('admin'):can('write');
   return{t:C.t,
-    head(){return `<div class="bar">${fSearch('Tìm kiếm…')}<div class="sp"></div>${C.upload&&canEdit()?`<button class="btn" data-act="${C.upload[0]}">⬆ ${C.upload[1]}</button>`:''}<button class="btn" data-act="export" data-name="${slug(C.t)}">⬇ Excel</button>${canEdit()?`<button class="btn acc" data-act="crud-new" data-key="${key}">＋ Thêm ${C.t.toLowerCase()}</button>`:''}</div>`},
+    head(){return `${C.note?`<p class="note">${C.note}</p>`:''}<div class="bar">${fSearch('Tìm kiếm…')}<div class="sp"></div>${C.upload&&canEdit()?`<button class="btn" data-act="${C.upload[0]}">⬆ ${C.upload[1]}</button>`:''}<button class="btn" data-act="export" data-name="${slug(C.t)}">⬇ Excel</button>${canEdit()&&!C.noAdd?`<button class="btn acc" data-act="crud-new" data-key="${key}">＋ Thêm ${C.t.toLowerCase()}</button>`:''}</div>`},
     tbl(){
       const q=(F().q||'').toLowerCase(),rows=db[C.col].filter(r=>!q||Object.values(r).join(' ').toLowerCase().includes(q));
-      return table([...C.fields.map(([k,l])=>({h:l,c:k==='address'?'addr':'',f:r=>esc(r[k]||'')})),...(C.extra?C.extra():[]),...(C.flags||[]).map(([k])=>({h:'Nhóm IT',f:r=>r[k]?badge('info','IT Asset'):'<span class="muted">—</span>',x:r=>r[k]?'IT':''})),actCol(r=>canEdit()?`<button class="btn sm" data-act="crud-edit" data-key="${key}" data-id="${r.id}">Sửa</button> <button class="btn sm danger" data-act="crud-del" data-key="${key}" data-id="${r.id}">Xoá</button>`:'')],rows,{empty:'Chưa có dữ liệu.'});
+      return table([...C.fields.map(([k,l])=>({h:l,c:k==='address'?'addr':'',f:r=>esc(r[k]||'')})),...(C.extra?C.extra():[]),...(C.flags||[]).map(([k])=>({h:'Nhóm IT',f:r=>r[k]?badge('info','IT Asset'):'<span class="muted">—</span>',x:r=>r[k]?'IT':''})),actCol(r=>canEdit()?`<button class="btn sm" data-act="crud-edit" data-key="${key}" data-id="${r.id}">Sửa</button> ${C.noDel?'':` <button class="btn sm danger" data-act="crud-del" data-key="${key}" data-id="${r.id}">Xoá</button>`}`:'')],rows,{empty:'Chưa có dữ liệu.'});
     }};
 }
 Object.keys(CRUD).forEach(k=>{PAGES['info/'+k]=crudPage(k)});PAGES['in/suppliers']=crudPage('supplier');
@@ -1296,7 +1346,7 @@ SUB['crud-save']=form=>{
 ACT['crud-del']=el=>{
   const key=el.dataset.key,C=CRUD[key],id=el.dataset.id;
   if(C.used(id))return toast('Mục này đang được sử dụng trong dữ liệu, không thể xoá.','error');
-  if(key==='warehouse'&&db.warehouses.length<=1)return toast('Phải giữ lại ít nhất một kho.','error');
+  if(C.noDel)return toast('Đây là kho hệ thống, không thể xoá.','error');
   if(confirm('Xoá mục này?'))transact(()=>{db[C.col]=db[C.col].filter(x=>x.id!==id)})&&done('Đã xoá');
 };
 
@@ -1358,7 +1408,7 @@ ACT.sample=()=>{if(db.items.length&&!confirm('Dữ liệu kho hiện tại sẽ 
    ===================================================================== */
 function loadSample(){
   const u=db.users,c=db.company;db=defaultDB();db.users=u;db.company=c;
-  db.warehouses=[{id:'w_main',name:'Kho chính',location:'TVE-HCM',keeper:''},{id:'w_it',name:'Kho IT',location:'Tầng 2',keeper:''}];
+  db.warehouses=WH_DEF();
   db.suppliers=[{id:'s1',name:'Công ty FPT Trading',contact:'Anh Minh',phone:'0901 234 567',email:'sales@fpt-trading.example',address:'Quận 1, TP.HCM'},{id:'s2',name:'Phong Vũ',contact:'Chị Lan',phone:'0902 345 678',email:'',address:'Quận 3, TP.HCM'},{id:'s3',name:'An Phát Computer',contact:'',phone:'',email:'',address:''}];
   db.projects=[{id:'p1',code:'PRJ-001',name:'Nhà máy Long An – Line 2',customer:'Khách hàng A',contact:'',note:''},{id:'p2',code:'PRJ-002',name:'Văn phòng Bình Dương',customer:'Khách hàng B',contact:'',note:''}];
   db.retail=[{id:'rt1',name:'Nguyễn Văn A',phone:'',dept:'Phòng Kỹ thuật',note:''},{id:'rt2',name:'Trần Thị B',phone:'',dept:'Phòng Kế toán',note:''}];
@@ -1369,19 +1419,22 @@ function loadSample(){
   I('i7','AC-MS331','Chuột Logitech M331','c_acc','Cái',5,250000);I('i8','AC-KB120','Bàn phím Logitech K120','c_acc','Cái',5,200000);I('i9','AC-HDMI2','Cáp HDMI 2m','c_acc','Sợi',5,85000);
   I('i10','VPP-A4','Giấy A4 Double A','c_office','Ream',5,75000);I('i11','VPP-HP76','Mực in HP 76A','c_office','Hộp',3,1500000);
   const ser=(p,off,n)=>Array.from({length:n},(_,k)=>`${p}${String(off+k+1).padStart(4,'0')}`);
-  const pick=(iid,wh,n)=>db.assets.filter(a=>a.itemId===iid&&a.status==='in_stock'&&a.warehouseId===wh).slice(0,n).map(a=>a.id);
-  const R=(date,sup,wh,lines)=>_newReceipt({date,supplierId:sup,warehouseId:wh,ref:'',note:'',lines});
-  const X=(date,wh,tt,tid,receiver,lines)=>_newIssue({date,warehouseId:wh,targetType:tt,targetId:tid,receiver,note:'',lines});
+  const pick=(iid,n)=>db.assets.filter(a=>a.itemId===iid&&a.status==='in_stock'&&a.warehouseId===W_INT).slice(0,n).map(a=>a.id);
+  const R=(date,sup,mode,ref,lines)=>_newReceipt({date,supplierId:sup,whs:modeWhs(mode),ref,invoiceDate:ref?date:'',note:'',lines});
+  const X=(date,mode,tt,tid,receiver,ref,lines)=>_newIssue({date,whs:modeWhs(mode),targetType:tt,targetId:tid,receiver,ref,invoiceDate:ref?date:'',note:'',lines});
   const L=(itemId,qty,extra={})=>({itemId,qty,price:itemOf(itemId).price,...extra});
-  R(dAgo(110),'s1','w_it',[L('i1',5,{serials:ser('DL5440-',0,5),warranty:24}),L('i2',3,{serials:ser('TP-E14-',0,3),warranty:24}),L('i3',6,{serials:ser('P2422-',0,6),warranty:3}),L('i4',2),L('i5',2,{serials:ser('SW24-',0,2),warranty:4}),L('i6',3),L('i7',20),L('i8',15),L('i9',10)]);
-  R(dAgo(60),'s2','w_it',[L('i1',3,{serials:ser('DL5440-',5,3),warranty:24}),L('i3',2,{serials:ser('P2422-',6,2),warranty:24})]);
-  R(dAgo(20),'s3','w_main',[L('i10',20),L('i11',5)]);
-  X(dAgo(95),'w_it','project','p1','Anh Hùng (PM)',[L('i1',3,{assetIds:pick('i1','w_it',3)}),L('i3',3,{assetIds:pick('i3','w_it',3)})]);
-  X(dAgo(70),'w_it','retail','rt1','Nguyễn Văn A',[L('i1',1,{assetIds:pick('i1','w_it',1)}),L('i7',1)]);
-  X(dAgo(40),'w_it','project','p2','Chị Thu',[L('i5',1,{assetIds:pick('i5','w_it',1)}),L('i6',1),L('i9',10)]);
-  X(dAgo(12),'w_it','retail','rt2','Trần Thị B',[L('i3',2,{assetIds:pick('i3','w_it',2)})]);
-  X(dAgo(5),'w_main','project','p1','Anh Hùng (PM)',[L('i10',5),L('i11',3)]);
-  X(dAgo(2),'w_it','retail','rt1','Nguyễn Văn A',[L('i7',2),L('i8',2)]);
+  /* Nhập: có hóa đơn → cả 2 kho; mua không hóa đơn → chỉ Kho nội bộ */
+  R(dAgo(110),'s1','both','HD-0001',[L('i1',5,{serials:ser('DL5440-',0,5),warranty:24}),L('i2',3,{serials:ser('TP-E14-',0,3),warranty:24}),L('i3',6,{serials:ser('P2422-',0,6),warranty:3}),L('i4',2),L('i5',2,{serials:ser('SW24-',0,2),warranty:4}),L('i6',3),L('i7',20),L('i8',15),L('i9',10)]);
+  R(dAgo(60),'s2','int','',[L('i1',3,{serials:ser('DL5440-',5,3),warranty:24}),L('i3',2,{serials:ser('P2422-',6,2),warranty:24})]);
+  R(dAgo(20),'s3','both','HD-0002',[L('i10',20),L('i11',5)]);
+  /* Xuất: khách hàng/dự án → có hóa đơn (2 kho); khách lẻ → chỉ Kho nội bộ; 1 phiếu chỉ xuất hóa đơn */
+  X(dAgo(95),'both','project','p1','Anh Hùng (PM)','HĐ-1001',[L('i1',3,{assetIds:pick('i1',3)}),L('i3',3,{assetIds:pick('i3',3)})]);
+  X(dAgo(70),'int','retail','rt1','Nguyễn Văn A','',[L('i1',1,{assetIds:pick('i1',1)}),L('i7',1)]);
+  X(dAgo(40),'both','project','p2','Chị Thu','HĐ-1002',[L('i5',1,{assetIds:pick('i5',1)}),L('i6',1),L('i9',10)]);
+  X(dAgo(12),'int','retail','rt2','Trần Thị B','',[L('i3',2,{assetIds:pick('i3',2)})]);
+  X(dAgo(5),'both','project','p1','Anh Hùng (PM)','HĐ-1003',[L('i10',5),L('i11',3)]);
+  X(dAgo(2),'int','retail','rt1','Nguyễn Văn A','',[L('i7',2),L('i8',2)]);
+  X(dAgo(1),'inv','project','p2','','HĐ-1004',[L('i7',3)]);
   db.assets.forEach(a=>{if(a.itemId==='i1')a.spec='Core i7 / 16GB / 512GB SSD';if(a.itemId==='i2')a.spec='Ryzen 5 / 16GB / 512GB SSD';if(a.itemId==='i3')a.spec='24 inch FHD IPS'});
   const rp=db.assets.find(a=>a.itemId==='i3'&&a.status==='in_stock');if(rp){rp.status='repair';addHist(rp,'Sửa chữa','Màn hình bị sọc ngang, gửi bảo hành')}
   save();toast('Đã nạp dữ liệu mẫu');
@@ -1488,7 +1541,7 @@ async function startImport(kind,file){
   const spec=SPECS[kind];
   try{
     const m=mapRows(await readSheet(file),spec);if(m.error)return toast(m.error,'error');
-    IMP={kind,file:file.name,rows:m.rows,wh:db.warehouses[0]?.id||'',spec};
+    IMP={kind,file:file.name,rows:m.rows,wh:W_INT,spec};
     modal(spec.title,`<p class="note">File: <b>${esc(file.name)}</b> · ${fmtNum(m.rows.length)} dòng dữ liệu</p><div id="imp"></div>`,{size:'mid',footer:cancelBtn+'<button class="btn acc" data-act="imp-ok">Xác nhận nhập</button>'});
     renderImp();
   }catch(e){toast('Không đọc được file: '+e.message,'error')}
@@ -1501,7 +1554,7 @@ function renderImp(){
   catch(e){box.innerHTML=`<div class="empty">${esc(e.message)}</div>`;IMP.err=true;return}
   IMP.err=false;
   const map=Object.values(rep.map||{});
-  box.innerHTML=`${IMP.spec.warehouse?`<div class="fg" style="margin-bottom:12px"><label class="f"><span>Cập nhật tồn cho kho</span><select class="in" data-impwh>${db.warehouses.map(w=>`<option value="${w.id}" ${w.id===IMP.wh?'selected':''}>${esc(w.name)}</option>`).join('')}</select></label></div>`:''}
+  box.innerHTML=`${IMP.spec.warehouse?`<div class="fg" style="margin-bottom:12px"><label class="f"><span>Cập nhật tồn cho kho</span><select class="in" data-impwh>${[[W_INT,'Kho nội bộ (tồn thực tế)'],[W_INV,'Kho hóa đơn'],['both','Cả hai kho (đặt bằng số trong file)']].map(([v,l])=>`<option value="${v}" ${v===IMP.wh?'selected':''}>${l}</option>`).join('')}</select></label></div>`:''}
   <div class="kpis sm">${kpi('Thêm mới',fmtNum(rep.add),'','ok')}${kpi('Ghi đè (có thay đổi)',fmtNum(rep.upd),'','warn')}${kpi('Giống hệt, không đổi',fmtNum(rep.same))}${(rep.extra||[]).map(([l,v])=>kpi(l,fmtNum(v),'','info')).join('')}</div>
   <p class="note">Bản ghi trùng ${IMP.kind==='stock'?'SKU':'mã (hoặc tên nếu không có mã)'} với dữ liệu đang có sẽ được <b>ghi đè</b>; bản ghi chưa có sẽ được thêm mới. Dữ liệu có sẵn mà không nằm trong file được giữ nguyên.${IMP.kind==='stock'?' Tồn kho của từng mặt hàng ở kho đã chọn sẽ được đặt bằng số lượng trong file (ghi thành một phiếu kiểm kê để truy vết).':''}</p>
   ${map.length?`<details><summary class="note">Danh mục được gộp vào danh mục có sẵn (${map.length})</summary><ul class="imp-notes">${map.map(x=>`<li>${esc(x.from)} → <b>${esc(x.to)}</b> (${x.n} mã)</li>`).join('')}</ul></details>`:''}
@@ -1571,8 +1624,10 @@ function resolveCat(name,rep){
   c={id:uid('c'),name:n,isIT:false};db.categories.push(c);rep.newCats.add(n);return c;
 }
 function applyStock(rows,wh,file){
-  if(!wh||!by(db.warehouses,wh))throw new Error('Chưa chọn kho.');
-  const rep={add:0,upd:0,same:0,notes:[],extra:[],newCats:new Set(),map:{}},m=stockMap(),lines=new Map(),seen=new Map(),state=new Map();
+  const list=wh==='both'?[W_INT,W_INV]:[wh];
+  if(!wh||list.some(w=>!by(db.warehouses,w)))throw new Error('Chưa chọn kho.');
+  const rep={add:0,upd:0,same:0,notes:[],extra:[],newCats:new Set(),map:{}},m=stockMap(),linesBy={},seen=new Map(),state=new Map();
+  list.forEach(w=>{linesBy[w]=new Map()});
   rows.forEach((r,ix)=>{
     const row=ix+2,sku=cell(r.sku),name=cell(r.name);
     if(!sku||!name){if(sku||name)rep.notes.push(`Dòng ${row}: thiếu ${!sku?'SKU':'tên hàng'} → bỏ qua`);return}
@@ -1587,13 +1642,14 @@ function applyStock(rows,wh,file){
     let it=db.items.find(x=>x.sku.toLowerCase()===key),isNew=false,changed=false;
     if(it){const before=JSON.stringify(it);it.name=name;it.categoryId=cat.id;it.unit=unit;if(price>0)it.price=price;changed=JSON.stringify(it)!==before}
     else{it={id:uid('it'),sku,name,categoryId:cat.id,unit,minStock:0,price,note:''};db.items.push(it);isNew=true}
-    const cur=m[it.id]?.[wh]||0,diff=Math.abs(cur-qty)>1e-9;
-    if(diff)lines.set(it.id,{itemId:it.id,system:cur,actual:qty});else lines.delete(it.id);
+    let diff=false;
+    list.forEach(w=>{const cur=m[it.id]?.[w]||0,d=Math.abs(cur-qty)>1e-9;if(d){diff=true;linesBy[w].set(it.id,{itemId:it.id,system:cur,actual:qty})}else linesBy[w].delete(it.id)});
     const s=state.get(it.id)||{isNew:false,changed:false};s.isNew=s.isNew||isNew;s.changed=s.changed||changed||diff;state.set(it.id,s);
   });
   state.forEach(s=>{if(s.isNew)rep.add++;else if(s.changed)rep.upd++;else rep.same++});
-  if(lines.size)db.stocktakes.push({id:uid('kk'),code:nextCode('KK'),date:todayStr(),warehouseId:wh,note:`Cập nhật tồn kho từ file Excel: ${file}`,lines:[...lines.values()],createdBy:session?.name||'system',createdAt:Date.now()});
-  rep.extra=[['Dòng điều chỉnh tồn',lines.size],['Danh mục mới',rep.newCats.size]];
+  let nLines=0;
+  list.forEach(w=>{const ls=linesBy[w];if(!ls.size)return;nLines+=ls.size;db.stocktakes.push({id:uid('kk'),code:nextCode('KK'),date:todayStr(),warehouseId:w,note:`Cập nhật tồn ${whName(w)} từ file Excel: ${file}`,lines:[...ls.values()],createdBy:session?.name||'system',createdAt:Date.now()})});
+  rep.extra=[['Dòng điều chỉnh tồn',nLines],['Danh mục mới',rep.newCats.size]];
   if(rep.newCats.size)rep.notes.unshift(`Sẽ tạo ${rep.newCats.size} danh mục mới từ file: ${[...rep.newCats].join(', ')}`);
   return rep;
 }
@@ -1668,7 +1724,9 @@ function startSync(){
 }
 function afterReady(){
   migrate();
-  if(session.role==='admin'&&!db.categories.length&&!db.warehouses.length&&!db.items.length){const d=defaultDB();db.categories=d.categories;db.warehouses=d.warehouses;save()}
+  const moved=migrateWarehouses();
+  if(session.role==='admin'&&!db.categories.length&&!db.items.length&&!db.receipts.length){db.categories=defaultDB().categories;save()}
+  else if(moved)save();
   render(false);
 }
 function applyRemote(col,changes){
@@ -1680,7 +1738,7 @@ function applyRemote(col,changes){
     if(remote[col][id]===s)return;
     remote[col][id]=s;if(i>=0)db[col][i]=data;else db[col].push(data);changed=true;
   });
-  if(changed)scheduleRender();
+  if(changed){if(cloudReady)migrateWarehouses();scheduleRender()}
 }
 function scheduleRender(){
   if(!cloudReady)return;
@@ -1697,6 +1755,7 @@ function cloudPush(){
   if(!cloudReady||!can('write'))return;
   const ops=[];
   SYNC.forEach(col=>{
+    if(col==='warehouses'&&session.role!=='admin')return;
     const cur={};db[col].forEach(r=>{cur[r.id]=canon(r)});const old=remote[col];
     for(const id in cur)if(old[id]!==cur[id])ops.push({col,id,data:JSON.parse(cur[id])});
     for(const id in old)if(!(id in cur))ops.push({col,id,del:true});
