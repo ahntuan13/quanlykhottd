@@ -48,14 +48,15 @@ const availIn=(it,w,m)=>{let a=(m||stockMap())[it.id]?.[w]||0;if(S.id&&S.kind===
 function availOf(l){const it=itemOf(l.itemId);if(!it)return 0;const m=stockMap();return Math.min(...sWhs().map(w=>availIn(it,w,m)))}
 function renderLines(){
   const isR=S.kind==='receipt',m=stockMap();
-  $('#lines').innerHTML=S.lines.map((l,i)=>{
+  const head=isR?'<div class="ln-head isr"><span>Hàng hóa</span><span>ĐVT</span><span>Số lượng</span><span>Đơn giá (VND)</span><span class="r">Thành tiền (VND)</span><span></span></div>':'<div class="ln-head"><span>Hàng hóa</span><span>ĐVT</span><span>Tồn kho</span><span>Số lượng</span><span></span></div>';
+  $('#lines').innerHTML=head+S.lines.map((l,i)=>{
     const it=itemOf(l.itemId),isIT=!!(it&&catOf(it.categoryId)?.isIT),tracked=isR?serialsOf(l).length>0:l.assetIds.length>0;
     let avail=0,stkTxt='';if(it&&!isR){const per=sWhs().map(w=>[w,availIn(it,w,m)]);avail=Math.min(...per.map(x=>x[1]));stkTxt=per.map(([w,a])=>`${w===W_INV?'Hóa đơn':'Nội bộ'}: ${fmtNum(a)}`).join(' · ')}
     const item=`<input class="in itm" data-cb="item" data-idx="${i}" autocomplete="off" placeholder="Bấm để chọn hoặc gõ mã / tên hàng…" value="${esc(it?itemLabel(it):l.itemText||'')}" data-l="${i}:itemText" aria-label="Hàng hóa">`;
-    const qty=`<input class="in" type="number" min="0" step="1" value="${l.qty}" data-l="${i}:qty" ${tracked?'readonly':''} aria-label="Số lượng">`;
+    const qty=`<input class="in" type="text" inputmode="numeric" data-num="int" value="${l.qty}" data-l="${i}:qty" ${tracked?'readonly':''} aria-label="Số lượng">`;
     const del=`<button type="button" class="btn sm danger" data-act="ln-del" data-i="${i}" aria-label="Xoá dòng">✕</button>`;
     const main=isR
-      ?`<div class="ln-main isr">${item}<span class="unit">${esc(it?.unit||'')}</span>${qty}<input class="in" type="number" min="0" step="any" value="${l.price}" data-l="${i}:price" placeholder="Đơn giá" aria-label="Đơn giá"><span class="amt">${fmtMoney(l.qty*l.price)}</span>${del}</div>`
+      ?`<div class="ln-main isr">${item}<span class="unit">${esc(it?.unit||'')}</span>${qty}<input class="in" type="text" inputmode="decimal" data-num="money" value="${fmtPrice(l.price)}" data-l="${i}:price" placeholder="Đơn giá (VND)" aria-label="Đơn giá (VND)"><span class="amt">${fmtMoney(l.qty*l.price)} VND</span>${del}</div>`
       :`<div class="ln-main">${item}<span class="unit">${esc(it?.unit||'')}</span>${it?`<span class="stk ${l.qty>avail?'bad':''}">Tồn ${stkTxt}</span>`:'<span></span>'}${qty}${del}</div>`;
     let extra='';
     if(it&&isIT&&isR&&sInt())extra=`<div class="ser"><textarea class="in" placeholder="Serial / Service Tag – mỗi dòng một thiết bị (bỏ trống nếu không quản lý theo Serial)" data-l="${i}:serialsText">${esc(l.serialsText)}</textarea><label class="f"><span>Bảo hành (tháng)</span><input class="in" type="number" min="0" value="${esc(l.warranty)}" data-l="${i}:warranty"></label></div>`;
@@ -76,7 +77,7 @@ function syncLineUI(i){
   if(row){
     const tracked=S.kind==='receipt'?serialsOf(l).length>0:l.assetIds.length>0,q=$('[data-l$=":qty"]',row);
     if(q){if(tracked||document.activeElement!==q)q.value=l.qty;q.readOnly=tracked}
-    const a=$('.amt',row);if(a)a.textContent=fmtMoney(l.qty*l.price);
+    const a=$('.amt',row);if(a)a.textContent=fmtMoney(l.qty*l.price)+' VND';
     const sm=$('.asum',row);if(sm)sm.textContent=`đã chọn ${l.assetIds.length}`;
     const st=$('.stk',row);if(st)st.classList.toggle('bad',l.qty>availOf(l));
   }
