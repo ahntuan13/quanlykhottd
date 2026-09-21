@@ -22,7 +22,7 @@ PAGES['wh/items']={t:'Danh sách hàng hóa',
   }};
 function itemForm(id){
   const it=id?itemOf(id):{sku:'',name:'',categoryId:db.categories[0]?.id,unit:'Cái',minStock:0,price:0,note:''};
-  modal(id?'Sửa hàng hóa':'Thêm hàng hóa',`<form id="mf" data-submit="item-save" data-id="${id||''}"><div class="fg">${inp('sku','Mã hàng (SKU)',it.sku,{ph:'Để trống để tự sinh'})}${inp('name','Tên hàng hóa',it.name,{req:1})}${sel('categoryId','Danh mục',db.categories.map(c=>[c.id,c.name+(c.isIT?' (IT – quản lý theo Serial)':'')]),it.categoryId)}${inp('unit','Đơn vị tính',it.unit,{req:1})}${inp('minStock','Tồn tối thiểu (cảnh báo)',it.minStock,{type:'number',step:'1',min:0})}${inp('price','Đơn giá tham chiếu (VND)',it.price,{type:'number',step:'any',min:0})}${txa('note','Ghi chú',it.note,{full:1})}</div></form>`,{footer:cancelBtn+`<button class="btn primary" form="mf">Lưu hàng hóa</button>`});
+  modal(id?'Sửa hàng hóa':'Thêm hàng hóa',`<form id="mf" data-submit="item-save" data-id="${id||''}"><div class="fg">${inp('sku','Mã hàng (SKU)',it.sku,{ph:'Để trống để tự sinh'})}${inp('name','Tên hàng hóa',it.name,{req:1})}${sel('categoryId','Danh mục',db.categories.map(c=>[c.id,c.name+(c.isIT?' (IT – quản lý theo Serial)':'')]),it.categoryId)}${inp('unit','Đơn vị tính',it.unit,{req:1})}${inp('minStock','Tồn tối thiểu (cảnh báo)',it.minStock,{type:'text',attrs:'inputmode="numeric" data-num="int"'})}${inp('price','Đơn giá tham chiếu (VND)',fmtPrice(it.price),{type:'text',attrs:'inputmode="decimal" data-num="money"'})}${txa('note','Ghi chú',it.note,{full:1})}</div></form>`,{footer:cancelBtn+`<button class="btn primary" form="mf">Lưu hàng hóa</button>`});
 }
 ACT['item-new']=()=>itemForm();ACT['item-edit']=el=>itemForm(el.dataset.id);
 ACT['item-del']=el=>{const id=el.dataset.id;if(itemUsed(id))return toast('Hàng hóa đã phát sinh giao dịch, không thể xoá.','error');if(confirm('Xoá hàng hóa này?'))transact(()=>{db.items=db.items.filter(i=>i.id!==id)})&&done('Đã xoá')};
@@ -93,7 +93,7 @@ ACT['xfer-one']=el=>{
   modal('Chuyển kho',`<form id="mf" data-submit="xfer-one" data-id="${it.id}"><p class="note"><b>${esc(itemLabel(it))}</b></p>
     <div class="kpis sm" style="margin-bottom:12px">${kpi('Kho nội bộ (thực tế)',`<span id="xf-a">${fmtNum(X)}</span>`,'','info')}${kpi('Kho hóa đơn',`<span id="xf-b">${fmtNum(Y)}</span>`,'','acc')}</div>
     <div class="fg">${sel('dir','Chuyển từ → đến',XF_DIRS,X>0||Y<=0?XF_DIRS[0][0]:XF_DIRS[1][0],{full:1,attrs:'data-xf'})}
-    ${inp('qty','Số lượng chuyển (tối đa: tồn của kho nguồn)',X>0||Y<=0?X:Y,{type:'number',step:'1',min:1,req:1,attrs:'data-xf'})}
+    ${inp('qty','Số lượng chuyển (tối đa: tồn của kho nguồn)',X>0||Y<=0?X:Y,{type:'text',req:1,attrs:'data-xf data-num="int" inputmode="numeric"'})}
     ${inp('note','Ghi chú (không bắt buộc)','',{ph:'VD: nhập nhầm kho'})}</div></form>`,{footer:cancelBtn+'<button class="btn primary" form="mf">Chuyển kho</button>'});
   xfUpdate();
 };
@@ -161,7 +161,7 @@ function takeBody(){
 }
 function renderTake(){
   const m=stockMap(T.date),its=db.items.filter(i=>!T.cat||i.categoryId===T.cat).sort((a,b)=>a.sku.localeCompare(b.sku));
-  $('#take').innerHTML=its.length?`<div class="tw" style="max-height:50vh"><table class="t"><thead><tr><th>Mã</th><th>Tên hàng</th><th>ĐVT</th><th class="num">Hệ thống</th><th class="num">Thực tế</th><th class="num">Chênh lệch</th></tr></thead><tbody>${its.map(i=>{const sys=m[i.id]?.[T.warehouseId]||0,a=T.actual[i.id];return `<tr><td>${esc(i.sku)}</td><td>${esc(i.name)}</td><td>${esc(i.unit)}</td><td class="num">${fmtNum(sys)}</td><td class="num"><input class="in take-in" type="number" step="1" min="0" data-t="${i.id}" data-sys="${sys}" value="${a??''}"></td><td class="num" id="df-${i.id}">${diffHtml(a,sys)}</td></tr>`}).join('')}</tbody></table></div>`:'<div class="empty">Không có hàng hóa.</div>';
+  $('#take').innerHTML=its.length?`<div class="tw" style="max-height:50vh"><table class="t"><thead><tr><th>Mã</th><th>Tên hàng</th><th>ĐVT</th><th class="num">Hệ thống</th><th class="num">Thực tế</th><th class="num">Chênh lệch</th></tr></thead><tbody>${its.map(i=>{const sys=m[i.id]?.[T.warehouseId]||0,a=T.actual[i.id];return `<tr><td>${esc(i.sku)}</td><td>${esc(i.name)}</td><td>${esc(i.unit)}</td><td class="num">${fmtNum(sys)}</td><td class="num"><input class="in take-in" type="text" inputmode="numeric" data-num="int" data-t="${i.id}" data-sys="${sys}" value="${a??''}"></td><td class="num" id="df-${i.id}">${diffHtml(a,sys)}</td></tr>`}).join('')}</tbody></table></div>`:'<div class="empty">Không có hàng hóa.</div>';
 }
 ACT['take-new']=()=>{T={warehouseId:W_INT,date:todayStr(),cat:'',note:'',actual:{}};modal('Tạo phiếu kiểm kê',takeBody(),{size:'wide',footer:cancelBtn+'<button class="btn primary" data-act="take-save">💾 Lưu kiểm kê</button>'});renderTake()};
 ACT['take-save']=()=>{
