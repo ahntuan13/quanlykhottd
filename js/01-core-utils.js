@@ -31,8 +31,10 @@ const fmtDate=s=>s?s.split('-').reverse().join('/'):'';
 const fmtDT=iso=>{if(!iso)return'';const d=new Date(iso);return `${pad(d.getDate())}/${pad(d.getMonth()+1)}/${d.getFullYear()} ${pad(d.getHours())}:${pad(d.getMinutes())}`};
 const fmtNum=n=>new Intl.NumberFormat('vi-VN',{maximumFractionDigits:0}).format(Math.round(+n||0));
 const fmtMoney=n=>fmtNum(Math.round(+n||0));
+const fmtPrice=n=>new Intl.NumberFormat('vi-VN',{maximumFractionDigits:2}).format(+n||0);
 const uid=p=>p+'_'+Math.random().toString(36).slice(2,8)+Date.now().toString(36).slice(-4);
-const num=v=>{const n=parseFloat(String(v??'').replace(',','.'));return isNaN(n)?0:n};
+/* num(): đọc số theo kiểu Việt Nam (1.305.555,5 → 1305555.5; 166.667 → 166667; 12,5 → 12.5) */
+const num=v=>numVN(v);
 const strip=h=>{const d=document.createElement('div');d.innerHTML=String(h??'');return d.textContent.trim()};
 const norm=s=>String(s??'').normalize('NFD').replace(/[\u0300-\u036f]/g,'').replace(/đ/g,'d').replace(/Đ/g,'D').toLowerCase().replace(/\s+/g,' ').trim();
 const cell=v=>String(v??'').replace(/\s+/g,' ').trim();
