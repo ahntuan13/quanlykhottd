@@ -10,9 +10,9 @@ function slipHTML(kind,r){
   let total=0,qtyT=0;
   const rows=r.lines.map((l,i)=>{
     const it=itemOf(l.itemId)||{sku:'?',name:'(hàng đã xoá)',unit:''};
-    const amt=(+l.qty||0)*(+l.price||0);total+=amt;qtyT+=+l.qty||0;
+    const am=amt(l.qty,l.price);total=r2(total+am);qtyT+=+l.qty||0;
     const sn=isIn?(l.serials||[]):(l.assetIds||[]).map(id=>{const a=by(db.assets,id);return a?(a.serial||a.tag):''}).filter(Boolean);
-    return `<tr><td class="c">${i+1}</td><td>${esc(it.sku)}</td><td>${esc(it.name)}${sn.length?`<div class="sn">S/N: ${esc(sn.join(', '))}</div>`:''}</td><td class="c">${esc(it.unit)}</td><td class="r">${fmtNum(l.qty)}</td>${isIn?`<td class="r">${fmtMoney(l.price)}</td><td class="r">${fmtMoney(amt)}</td>`:''}</tr>`;
+    return `<tr><td class="c">${i+1}</td><td>${esc(it.sku)}</td><td>${esc(it.name)}${sn.length?`<div class="sn">S/N: ${esc(sn.join(', '))}</div>`:''}</td><td class="c">${esc(it.unit)}</td><td class="r">${fmtNum(l.qty)}</td>${isIn?`<td class="r">${fmtMoney(l.price)}</td><td class="r">${fmtMoney(am)}</td>`:''}</tr>`;
   }).join('');
   const foot=`<tr><td colspan="4" class="r"><b>Cộng</b></td><td class="r"><b>${fmtNum(qtyT)}</b></td>${isIn?`<td></td><td class="r"><b>${fmtMoney(total)}</b></td>`:''}</tr>`;
   const sign=isIn

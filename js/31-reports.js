@@ -17,7 +17,7 @@ PAGES['rpt/monthly']={t:'Báo cáo Nhập – Xuất – Tồn theo tháng',
     const sum=k=>rows.reduce((s,r)=>s+r[k],0);
     const vi=Object.values(fi).reduce((s,x)=>s+x.val,0),vo=Object.values(fo).reduce((s,x)=>s+x.val,0);
     return `<div class="kpis">${kpi('Tồn đầu kỳ',fmtNum(sum('o')))}${kpi('Nhập trong tháng',fmtNum(sum('a')),fmtMoney(vi)+' VND','ok')}${kpi('Xuất trong tháng',fmtNum(sum('b')),fmtMoney(vo)+' VND','warn')}${kpi('Tồn cuối kỳ',fmtNum(sum('c')),'','info')}</div>`+
-    table([{h:'Mã hàng',f:r=>`<b>${esc(r.i.sku)}</b>`,x:r=>r.i.sku},{h:'Tên hàng hóa',f:r=>esc(r.i.name),x:r=>r.i.name},{h:'ĐVT',f:r=>esc(r.i.unit)},nc('Tồn đầu',r=>r.o),nc('Nhập',r=>r.a),nc('Xuất',r=>r.b),nc('Điều chỉnh',r=>r.adj),nc('Tồn cuối',r=>r.c),nc('Giá trị tồn cuối (VND)',r=>r.c*(r.i.price||0),fmtMoney)],rows,{empty:'Không có phát sinh trong tháng này.',foot:`<tr><td colspan="3">Tổng</td><td class="num">${fmtNum(sum('o'))}</td><td class="num">${fmtNum(sum('a'))}</td><td class="num">${fmtNum(sum('b'))}</td><td class="num">${fmtNum(sum('adj'))}</td><td class="num">${fmtNum(sum('c'))}</td><td class="num">${fmtMoney(rows.reduce((s,r)=>s+r.c*(r.i.price||0),0))}</td></tr>`});
+    table([{h:'Mã hàng',f:r=>`<b>${esc(r.i.sku)}</b>`,x:r=>r.i.sku},{h:'Tên hàng hóa',f:r=>esc(r.i.name),x:r=>r.i.name},{h:'ĐVT',f:r=>esc(r.i.unit)},nc('Tồn đầu',r=>r.o),nc('Nhập',r=>r.a),nc('Xuất',r=>r.b),nc('Điều chỉnh',r=>r.adj),nc('Tồn cuối',r=>r.c),nc('Giá trị tồn cuối (VND)',r=>amt(r.c,r.i.price),fmtMoney)],rows,{empty:'Không có phát sinh trong tháng này.',foot:`<tr><td colspan="3">Tổng</td><td class="num">${fmtNum(sum('o'))}</td><td class="num">${fmtNum(sum('a'))}</td><td class="num">${fmtNum(sum('b'))}</td><td class="num">${fmtNum(sum('adj'))}</td><td class="num">${fmtNum(sum('c'))}</td><td class="num">${fmtMoney(rows.reduce((s,r)=>s+amt(r.c,r.i.price),0))}</td></tr>`});
   }};
 function issueReport(type,title){
   const targets=()=>type==='project'?db.projects.map(p=>[p.id,`${p.code} – ${p.name}`]):db.retail.map(c=>[c.id,c.name]);
@@ -27,7 +27,7 @@ function issueReport(type,title){
     tbl(){
       const f=F(),from=f.from??firstOfYear(),to=f.to??todayStr(),agg={};
       db.issues.forEach(r=>{if(r.targetType!==type||(f.target&&r.targetId!==f.target)||(f.wh&&!inWh(r,f.wh))||(from&&r.date<from)||(to&&r.date>to))return;
-        r.lines.forEach(l=>{const k=r.targetId+'|'+l.itemId,x=(agg[k]??={tid:r.targetId,iid:l.itemId,qty:0,val:0,slips:new Set()});x.qty+=+l.qty||0;x.val+=(+l.qty||0)*(+l.price||0);x.slips.add(r.id)})});
+        r.lines.forEach(l=>{const k=r.targetId+'|'+l.itemId,x=(agg[k]??={tid:r.targetId,iid:l.itemId,qty:0,val:0,slips:new Set()});x.qty+=+l.qty||0;x.val=r2(x.val+amt(l.qty,l.price));x.slips.add(r.id)})});
       const rows=Object.values(agg).sort((a,b)=>targetLabel(type,a.tid).localeCompare(targetLabel(type,b.tid))||(itemOf(a.iid)?.sku||'').localeCompare(itemOf(b.iid)?.sku||''));
       const tot=rows.reduce((s,r)=>({q:s.q+r.qty,v:s.v+r.val}),{q:0,v:0}),nT=new Set(rows.map(r=>r.tid)).size;
       return `<div class="kpis">${kpi(type==='project'?'Số dự án':'Số khách lẻ',nT)}${kpi('Tổng số lượng xuất',fmtNum(tot.q),'','warn')}${kpi('Tổng giá trị (VND)',fmtMoney(tot.v),'','acc')}</div><div class="card"><h4>Giá trị xuất theo ${type==='project'?'dự án':'khách lẻ'} (top 10)</h4><div class="ch"><canvas id="c1"></canvas></div></div>`+
@@ -35,7 +35,7 @@ function issueReport(type,title){
     },
     tm(){
       const f=F(),from=f.from??firstOfYear(),to=f.to??todayStr(),agg={};
-      db.issues.forEach(r=>{if(r.targetType!==type||(f.target&&r.targetId!==f.target)||(f.wh&&!inWh(r,f.wh))||(from&&r.date<from)||(to&&r.date>to))return;r.lines.forEach(l=>{agg[r.targetId]=(agg[r.targetId]||0)+(+l.qty||0)*(+l.price||0)})});
+      db.issues.forEach(r=>{if(r.targetType!==type||(f.target&&r.targetId!==f.target)||(f.wh&&!inWh(r,f.wh))||(from&&r.date<from)||(to&&r.date>to))return;r.lines.forEach(l=>{agg[r.targetId]=r2((agg[r.targetId]||0)+amt(l.qty,l.price))})});
       const top=Object.entries(agg).sort((a,b)=>b[1]-a[1]).slice(0,10);
       chart('c1',{type:'bar',data:{labels:top.map(([id])=>targetLabel(type,id)),datasets:[{label:'Giá trị (VND)',data:top.map(x=>x[1]),backgroundColor:PAL[0]}]},options:baseOpt({plugins:{legend:{display:false}}})});
     }};
@@ -48,7 +48,7 @@ PAGES['rpt/category']={t:'Báo cáo theo loại thiết bị',
   data(){
     const f=F(),from=f.from??firstOfYear(),to=f.to??todayStr(),m=stockMap(),fi=flow('receipts',from,to,f.wh),fo=flow('issues',from,to,f.wh);
     return db.categories.map(c=>{const its=db.items.filter(i=>i.categoryId===c.id),as=db.assets.filter(a=>itemOf(a.itemId)?.categoryId===c.id);
-      return{c,codes:its.length,q:its.reduce((s,i)=>s+qtyIn(m,i.id,f.wh),0),v:its.reduce((s,i)=>s+qtyIn(m,i.id,f.wh)*(i.price||0),0),a:its.reduce((s,i)=>s+(fi[i.id]?.qty||0),0),b:its.reduce((s,i)=>s+(fo[i.id]?.qty||0),0),ak:as.filter(x=>x.status==='in_stock').length,ac:as.filter(x=>x.status==='assigned').length,ar:as.filter(x=>x.status==='repair').length,at:as.length}}).filter(r=>r.codes);
+      return{c,codes:its.length,q:its.reduce((s,i)=>s+qtyIn(m,i.id,f.wh),0),v:its.reduce((s,i)=>s+amt(qtyIn(m,i.id,f.wh),i.price),0),a:its.reduce((s,i)=>s+(fi[i.id]?.qty||0),0),b:its.reduce((s,i)=>s+(fo[i.id]?.qty||0),0),ak:as.filter(x=>x.status==='in_stock').length,ac:as.filter(x=>x.status==='assigned').length,ar:as.filter(x=>x.status==='repair').length,at:as.length}}).filter(r=>r.codes);
   },
   tbl(){
     const rows=this.data();
@@ -65,7 +65,7 @@ PAGES['rpt/inout']={t:'Báo cáo Nhập / Xuất',
   head(){const m=addMonths(todayStr().slice(0,8)+'01',-5);return `<div class="bar">${fSel('g','Nhóm theo',[['month','Theo tháng'],['day','Theo ngày']])}${fSel('wh','Kho',stockWhOpts())}${fDate('from','Từ',m)}${fDate('to','Đến',todayStr())}<div class="sp"></div>${rptBtns('bao-cao-nhap-xuat')}</div>`},
   data(){
     const f=F(),m=addMonths(todayStr().slice(0,8)+'01',-5),from=f.from??m,to=f.to??todayStr(),len=(f.g||'month')==='month'?7:10,agg={};
-    const put=(kind,r)=>{if((from&&r.date<from)||(to&&r.date>to)||!inWh(r,f.wh||W_INT))return;const k=r.date.slice(0,len),x=(agg[k]??={k,iq:0,iv:0,oq:0,ov:0});r.lines.forEach(l=>{const q=+l.qty||0,v=q*(+l.price||0);if(kind==='in'){x.iq+=q;x.iv+=v}else{x.oq+=q;x.ov+=v}})};
+    const put=(kind,r)=>{if((from&&r.date<from)||(to&&r.date>to)||!inWh(r,f.wh||W_INT))return;const k=r.date.slice(0,len),x=(agg[k]??={k,iq:0,iv:0,oq:0,ov:0});r.lines.forEach(l=>{const q=+l.qty||0,v=amt(q,l.price);if(kind==='in'){x.iq+=q;x.iv+=v}else{x.oq+=q;x.ov+=v}})};
     db.receipts.forEach(r=>put('in',r));db.issues.forEach(r=>put('out',r));
     return Object.values(agg).sort((a,b)=>a.k.localeCompare(b.k));
   },
@@ -95,7 +95,7 @@ PAGES['rpt/stock']={t:'Báo cáo tồn kho',
     if(from&&to&&from>to)return '<div class="empty">Ngày bắt đầu phải nhỏ hơn hoặc bằng ngày kết thúc.</div>';
     const op=stockMap(from,true),cl=stockMap(to),fi=flow('receipts',from,to,wh),fo=flow('issues',from,to,wh);
     const rows=db.items.filter(i=>!f.cat||i.categoryId===f.cat).map(i=>{const o=qtyIn(op,i.id,wh),c=qtyIn(cl,i.id,wh),a=fi[i.id]?.qty||0,b=fo[i.id]?.qty||0;return{i,o,a,b,adj:c-o-a+b,c}}).filter(r=>(r.o||r.a||r.b||r.adj||r.c)&&(f.st!=='move'||r.a||r.b||r.adj)).sort((x,y)=>x.i.sku.localeCompare(y.i.sku));
-    const sum=k=>rows.reduce((s,r)=>s+r[k],0),val=rows.reduce((s,r)=>s+r.c*(r.i.price||0),0);
+    const sum=k=>rows.reduce((s,r)=>s+r[k],0),val=rows.reduce((s,r)=>s+amt(r.c,r.i.price),0);
     return `<div class="kpis">${kpi('Tồn đầu kỳ',fmtNum(sum('o')))}${kpi('Nhập trong kỳ',fmtNum(sum('a')),'','ok')}${kpi('Xuất trong kỳ',fmtNum(sum('b')),'','warn')}${kpi('Tồn cuối kỳ',fmtNum(sum('c')),`${fmtMoney(val)} VND`,'info')}</div>`+
-    table([{h:'Mã hàng',f:r=>`<b>${esc(r.i.sku)}</b>`,x:r=>r.i.sku},{h:'Tên hàng hóa',f:r=>esc(r.i.name),x:r=>r.i.name},{h:'Danh mục',f:r=>esc(nm(db.categories,r.i.categoryId))},{h:'ĐVT',f:r=>esc(r.i.unit)},nc('Tồn đầu kỳ',r=>r.o),nc('Nhập',r=>r.a),nc('Xuất',r=>r.b),nc('Điều chỉnh',r=>r.adj),nc('Tồn cuối kỳ',r=>r.c),nc('Đơn giá (VND)',r=>r.i.price||0,fmtMoney),nc('Giá trị cuối kỳ (VND)',r=>r.c*(r.i.price||0),fmtMoney)],rows,{empty:'Không có dữ liệu trong khoảng thời gian này.',foot:`<tr><td colspan="4">Tổng</td><td class="num">${fmtNum(sum('o'))}</td><td class="num">${fmtNum(sum('a'))}</td><td class="num">${fmtNum(sum('b'))}</td><td class="num">${fmtNum(sum('adj'))}</td><td class="num">${fmtNum(sum('c'))}</td><td></td><td class="num">${fmtMoney(val)}</td></tr>`});
+    table([{h:'Mã hàng',f:r=>`<b>${esc(r.i.sku)}</b>`,x:r=>r.i.sku},{h:'Tên hàng hóa',f:r=>esc(r.i.name),x:r=>r.i.name},{h:'Danh mục',f:r=>esc(nm(db.categories,r.i.categoryId))},{h:'ĐVT',f:r=>esc(r.i.unit)},nc('Tồn đầu kỳ',r=>r.o),nc('Nhập',r=>r.a),nc('Xuất',r=>r.b),nc('Điều chỉnh',r=>r.adj),nc('Tồn cuối kỳ',r=>r.c),nc('Đơn giá (VND)',r=>r.i.price||0,fmtMoney),nc('Giá trị cuối kỳ (VND)',r=>amt(r.c,r.i.price),fmtMoney)],rows,{empty:'Không có dữ liệu trong khoảng thời gian này.',foot:`<tr><td colspan="4">Tổng</td><td class="num">${fmtNum(sum('o'))}</td><td class="num">${fmtNum(sum('a'))}</td><td class="num">${fmtNum(sum('b'))}</td><td class="num">${fmtNum(sum('adj'))}</td><td class="num">${fmtNum(sum('c'))}</td><td></td><td class="num">${fmtMoney(val)}</td></tr>`});
   }};

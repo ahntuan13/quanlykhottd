@@ -22,7 +22,7 @@ function flow(kind,from,to,wh){
   wh=wh||W_INT;const o={};
   db[kind].forEach(r=>{
     if((from&&r.date<from)||(to&&r.date>to)||!inWh(r,wh))return;
-    r.lines.forEach(l=>{const x=(o[l.itemId]??={qty:0,val:0});const q=+l.qty||0;x.qty+=q;x.val+=q*(+l.price||itemOf(l.itemId)?.price||0)});
+    r.lines.forEach(l=>{const x=(o[l.itemId]??={qty:0,val:0});const q=+l.qty||0;x.qty+=q;x.val=r2(x.val+amt(q,+l.price||itemOf(l.itemId)?.price||0))});
   });
   return o;
 }

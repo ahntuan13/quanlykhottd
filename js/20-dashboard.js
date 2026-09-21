@@ -8,17 +8,17 @@
 const kpi=(l,v,s='',tone='')=>`<div class="kpi ${tone}"><div class="kl">${l}</div><div class="kv">${v}</div>${s?`<div class="ks">${s}</div>`:''}</div>`;
 const card=(title,body,cls='')=>`<section class="card ${cls}">${title?`<h4>${title}</h4>`:''}${body}</section>`;
 const miniTable=(heads,rows,empty='Không có dữ liệu.')=>rows.length?`<div class="tw"><table class="t"><thead><tr>${heads.map(h=>`<th>${h}</th>`).join('')}</tr></thead><tbody>${rows.join('')}</tbody></table></div>`:`<div class="note">${empty}</div>`;
-function stockStats(){const m=stockMap();let qty=0,val=0;db.items.forEach(it=>{const t=totalOf(m,it.id);qty+=t;val+=t*(it.price||0)});return{m,qty,val}}
+function stockStats(){const m=stockMap();let qty=0,val=0;db.items.forEach(it=>{const t=totalOf(m,it.id);qty+=t;val=r2(val+amt(t,it.price))});return{m,qty,val}}
 function monthlyFlow(months,wh=W_INT){
   return months.map(mk=>{
     let iq=0,iv=0,oq=0,ov=0,ic=0,oc=0;
-    db.receipts.forEach(r=>{if(r.date.slice(0,7)!==mk||!inWh(r,wh))return;ic++;r.lines.forEach(l=>{iq+=+l.qty||0;iv+=(+l.qty||0)*(+l.price||0)})});
-    db.issues.forEach(r=>{if(r.date.slice(0,7)!==mk||!inWh(r,wh))return;oc++;r.lines.forEach(l=>{oq+=+l.qty||0;ov+=(+l.qty||0)*(+l.price||0)})});
+    db.receipts.forEach(r=>{if(r.date.slice(0,7)!==mk||!inWh(r,wh))return;ic++;r.lines.forEach(l=>{iq+=+l.qty||0;iv=r2(iv+amt(l.qty,l.price))})});
+    db.issues.forEach(r=>{if(r.date.slice(0,7)!==mk||!inWh(r,wh))return;oc++;r.lines.forEach(l=>{oq+=+l.qty||0;ov=r2(ov+amt(l.qty,l.price))})});
     return{mk,iq,iv,oq,ov,ic,oc};
   });
 }
 const byDateDesc=(a,b)=>b.date.localeCompare(a.date)||((b.createdAt||0)-(a.createdAt||0));
-const slipTotals=r=>({q:r.lines.reduce((a,l)=>a+(+l.qty||0),0),v:r.lines.reduce((a,l)=>a+(+l.qty||0)*(+l.price||0),0)});
+const slipTotals=r=>({q:r.lines.reduce((a,l)=>a+(+l.qty||0),0),v:r2(r.lines.reduce((a,l)=>a+amt(l.qty,l.price),0))});
 const slipLink=(k,r)=>`<button class="lnk" data-act="slip-view" data-k="${k}" data-id="${r.id}">${esc(r.code)}</button>`;
 
 PAGES['dash/overview']={t:'Tổng quan',
@@ -34,7 +34,7 @@ PAGES['dash/overview']={t:'Tổng quan',
   m(){
     const ms=lastMonths(6),fl=monthlyFlow(ms);
     chart('c1',{type:'bar',data:{labels:ms.map(mLabel),datasets:[{label:'Nhập',data:fl.map(x=>x.iq),backgroundColor:PAL[3]},{label:'Xuất',data:fl.map(x=>x.oq),backgroundColor:PAL[0]}]},options:baseOpt({scales:{y:{beginAtZero:true}}})});
-    const {m}=stockStats(),rows=db.categories.map(c=>({n:c.name,v:db.items.filter(i=>i.categoryId===c.id).reduce((a,i)=>a+totalOf(m,i.id)*(i.price||0),0),q:db.items.filter(i=>i.categoryId===c.id).reduce((a,i)=>a+totalOf(m,i.id),0)})).filter(x=>x.v>0||x.q>0);
+    const {m}=stockStats(),rows=db.categories.map(c=>({n:c.name,v:db.items.filter(i=>i.categoryId===c.id).reduce((a,i)=>a+amt(totalOf(m,i.id),i.price),0),q:db.items.filter(i=>i.categoryId===c.id).reduce((a,i)=>a+totalOf(m,i.id),0)})).filter(x=>x.v>0||x.q>0);
     const useV=rows.some(x=>x.v>0);
     chart('c2',{type:'doughnut',data:{labels:rows.map(x=>x.n),datasets:[{data:rows.map(x=>useV?x.v:x.q),backgroundColor:PAL}]},options:baseOpt()});
   }};
@@ -45,14 +45,14 @@ function diffCard(m){
 }
 PAGES['dash/stock']={t:'Tồn kho',
   r(){
-    const {m}=stockStats(),rows=db.categories.map(c=>{const its=db.items.filter(i=>i.categoryId===c.id);return{n:c.name,codes:its.length,q:its.reduce((a,i)=>a+totalOf(m,i.id),0),v:its.reduce((a,i)=>a+totalOf(m,i.id)*(i.price||0),0)}}).filter(x=>x.codes);
+    const {m}=stockStats(),rows=db.categories.map(c=>{const its=db.items.filter(i=>i.categoryId===c.id);return{n:c.name,codes:its.length,q:its.reduce((a,i)=>a+totalOf(m,i.id),0),v:its.reduce((a,i)=>a+amt(totalOf(m,i.id),i.price),0)}}).filter(x=>x.codes);
     const A=alertsData();
     return `<div class="grid g2">${card('Top 10 hàng có giá trị tồn cao nhất','<div class="ch tall"><canvas id="c1"></canvas></div>')}${card('Tổng số lượng theo kho','<div class="ch tall"><canvas id="c2"></canvas></div>')}</div>
     ${card('Tồn kho theo danh mục',miniTable(['Danh mục','Số mã','Tổng SL','Giá trị (VND)'],rows.map(x=>`<tr><td>${esc(x.n)}</td><td class="num">${x.codes}</td><td class="num">${fmtNum(x.q)}</td><td class="num">${fmtMoney(x.v)}</td></tr>`)))}
     ${diffCard(m)}${card(`Hàng sắp hết / hết hàng (${A.low.length+A.out.length})`,miniTable(['Mã','Tên hàng','Tồn','Tối thiểu','Trạng thái'],[...A.out,...A.low].map(({it,t})=>`<tr><td>${esc(it.sku)}</td><td>${esc(it.name)}</td><td class="num">${fmtNum(t)}</td><td class="num">${fmtNum(it.minStock)}</td><td>${badge(...itemStatus(it,t))}</td></tr>`),'Không có hàng nào cần bổ sung.'))}`;
   },
   m(){
-    const {m}=stockStats(),top=db.items.map(i=>({n:i.name,v:totalOf(m,i.id)*(i.price||0)})).filter(x=>x.v>0).sort((a,b)=>b.v-a.v).slice(0,10);
+    const {m}=stockStats(),top=db.items.map(i=>({n:i.name,v:amt(totalOf(m,i.id),i.price)})).filter(x=>x.v>0).sort((a,b)=>b.v-a.v).slice(0,10);
     chart('c1',{type:'bar',data:{labels:top.map(x=>x.n.length>26?x.n.slice(0,25)+'…':x.n),datasets:[{label:'Giá trị (VND)',data:top.map(x=>x.v),backgroundColor:PAL[0]}]},options:baseOpt({indexAxis:'y',plugins:{legend:{display:false}}})});
     const sumW=w=>db.items.reduce((a,i)=>a+(m[i.id]?.[w]||0),0);
     chart('c2',{type:'bar',data:{labels:['Kho nội bộ (thực tế)','Kho hóa đơn'],datasets:[{label:'Tổng số lượng',data:[sumW(W_INT),sumW(W_INV)],backgroundColor:[PAL[1],PAL[0]]}]},options:baseOpt({plugins:{legend:{display:false}},scales:{y:{beginAtZero:true}}})});

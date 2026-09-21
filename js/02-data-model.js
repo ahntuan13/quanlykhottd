@@ -46,7 +46,9 @@ const modeWhs=m=>m==='both'?[W_INT,W_INV]:m==='inv'?[W_INV]:[W_INT];
 function migrateIntQty(){
   let ch=false;const fix=(o,k)=>{const v=+o[k];if(isFinite(v)&&v!==Math.round(v)){o[k]=Math.round(v);ch=true}};
   db.receipts.forEach(r=>r.lines.forEach(l=>fix(l,'qty')));db.issues.forEach(r=>r.lines.forEach(l=>fix(l,'qty')));
-  db.adjustments.forEach(a=>fix(a,'qty'));db.stocktakes.forEach(s=>s.lines.forEach(l=>{fix(l,'actual');fix(l,'system')}));db.items.forEach(i=>fix(i,'minStock'));
+  db.adjustments.forEach(a=>fix(a,'qty'));
+  const px=o=>{if(o&&o.price!==undefined&&o.price!==null){const v=r2(o.price);if(v!==o.price){o.price=v;ch=true}}};
+  db.items.forEach(px);db.receipts.forEach(r=>r.lines.forEach(px));db.issues.forEach(r=>r.lines.forEach(px));db.stocktakes.forEach(s=>s.lines.forEach(l=>{fix(l,'actual');fix(l,'system')}));db.items.forEach(i=>fix(i,'minStock'));
   return ch;
 }
 function migrateCompany(){if(db.company&&db.company.name==='Taikisha Vietnam Engineering Inc. (TVE-HCM)'){db.company.name='TTD Computer';return true}return false}

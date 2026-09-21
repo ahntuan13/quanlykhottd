@@ -132,7 +132,7 @@ function applyStock(rows,wh,file){
     unit=unit.charAt(0).toLocaleUpperCase('vi')+unit.slice(1);
     let qty=numVN(r.qty);if(qty<0){rep.notes.push(`Dòng ${row} (${sku}): tồn âm (${qty}) → đặt 0`);qty=0}
     if(qty!==Math.round(qty)){rep.notes.push(`Dòng ${row} (${sku} – ${name}): số lượng ${String(qty).replace('.',',')} không phải số nguyên → làm tròn thành ${Math.round(qty)}`);qty=Math.round(qty)}
-    const price=Math.round(numVN(r.price)),cat=resolveCat(r.cat,rep);
+    const price=r2(numVN(r.price)),cat=resolveCat(r.cat,rep);
     let it=db.items.find(x=>x.sku.toLowerCase()===key),isNew=false,changed=false;
     if(it){const before=JSON.stringify(it);it.name=name;it.categoryId=cat.id;it.unit=unit;if(price>0)it.price=price;changed=JSON.stringify(it)!==before}
     else{it={id:uid('it'),sku,name,categoryId:cat.id,unit,minStock:0,price,note:''};db.items.push(it);isNew=true}

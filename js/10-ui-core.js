@@ -56,7 +56,8 @@ const catOpts=(all='Tất cả danh mục')=>[['',all],...db.categories.map(c=>[
 /* Ô số kiểu Việt Nam: data-num="money" (tiền VND, tối đa 2 số lẻ) | "int" (số nguyên). Chuẩn hoá khi rời ô. */
 document.addEventListener('change',e=>{
   const el=e.target;if(!el.dataset||el.dataset.num===undefined||el.readOnly)return;
-  const v=numVN(el.value);el.value=el.value.trim()===''?'':(el.dataset.num==='int'?fmtNum(v):fmtPrice(v));
+  const isM=el.dataset.num==='money',v=isM?r2(evalMoney(el.value)):numVN(el.value);el.value=el.value.trim()===''?'':(isM?fmtPrice(v):fmtNum(v));
+  if(isM)el.dispatchEvent(new Event('input',{bubbles:true}));
 });
 document.addEventListener('focusin',e=>{const el=e.target;if(el.dataset&&el.dataset.num!==undefined&&el.select&&!el.readOnly)setTimeout(()=>el.select(),0)});
 function onFilter(e){
@@ -68,7 +69,7 @@ document.addEventListener('input',onFilter);document.addEventListener('change',o
 function refreshTbl(){destroyCharts();const t=$('#tbl');if(PAGE&&PAGE.tbl&&t){t.innerHTML=PAGE.tbl();PAGE.tm&&PAGE.tm()}else rerender()}
 
 /* ---------- bảng ---------- */
-const nc=(h,fn,fmt=fmtNum)=>({h,c:'num',f:r=>fmt(fn(r)),x:fn});
+const nc=(h,fn,fmt=fmtNum)=>({h,c:'num',f:r=>fmt(fn(r)),x:fmt===fmtMoney?(r=>r2(fn(r))):fn});
 function table(cols,rows,{empty='Chưa có dữ liệu.',limit=1000,foot=''}={}){
   ui.cur={cols,rows};
   if(!rows.length)return `<div class="empty">${empty}</div>`;

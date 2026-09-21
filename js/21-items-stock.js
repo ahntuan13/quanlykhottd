@@ -31,7 +31,7 @@ SUB['item-save']=form=>{
   if(sku&&db.items.some(x=>x.sku.toLowerCase()===sku.toLowerCase()&&x.id!==id))return toast('Mã hàng đã tồn tại.','error');
   const oldCat=id?itemOf(id)?.categoryId:null;
   if(transact(()=>{let it=id?itemOf(id):null;if(!it){it={id:uid('it')};it.sku=sku||autoSku();db.items.push(it)}else if(sku)it.sku=sku;
-    Object.assign(it,{name:d.name.trim(),categoryId:d.categoryId,unit:d.unit.trim(),minStock:Math.round(num(d.minStock)),price:num(d.price),note:d.note||''})}))done(oldCat&&oldCat!==d.categoryId?`Đã chuyển sang danh mục "${nm(db.categories,d.categoryId)}" và gỡ khỏi "${nm(db.categories,oldCat)}"`:undefined);
+    Object.assign(it,{name:d.name.trim(),categoryId:d.categoryId,unit:d.unit.trim(),minStock:Math.round(num(d.minStock)),price:r2(num(d.price)),note:d.note||''})}))done(oldCat&&oldCat!==d.categoryId?`Đã chuyển sang danh mục "${nm(db.categories,d.categoryId)}" và gỡ khỏi "${nm(db.categories,oldCat)}"`:undefined);
 };
 ACT['tpl-items']=()=>xlsxSave([['SKU','Tên hàng','Danh mục','ĐVT','Tồn tối thiểu','Đơn giá','Ghi chú'],['LT-001','Laptop Dell Latitude 5440','Laptop / PC','Cái',2,22500000,''],['VPP-001','Giấy A4 Double A','Văn phòng phẩm','Ream',10,75000,'']],'mau-nhap-hang-hoa','HangHoa');
 ACT['imp-items']=()=>{const i=document.createElement('input');i.type='file';i.accept='.xlsx,.xls,.csv';i.onchange=()=>i.files[0]&&importItems(i.files[0]);i.click()};
@@ -70,10 +70,10 @@ PAGES['wh/stock']={t:'Tồn kho',
     const cols=[...(w?[{h:'<input type="checkbox" data-act="xf-pickall" aria-label="Chọn tất cả">',noexp:1,f:r=>`<input type="checkbox" class="xfpick" value="${r.id}">`}]:[]),{h:'Mã hàng',f:r=>`<b>${esc(r.sku)}</b>`,x:r=>r.sku},{h:'Tên hàng hóa',f:r=>esc(r.name),x:r=>r.name},{h:'Danh mục',f:r=>esc(nm(db.categories,r.categoryId))},{h:'ĐVT',f:r=>esc(r.unit)},
       nc('Kho nội bộ (thực tế)',pi),nc('Kho hóa đơn',vi),
       {h:'Chênh lệch',c:'num',f:r=>{const d=pi(r)-vi(r);return d===0?'<span class="muted">0</span>':`<span class="${d>0?'pos':'neg'}">${d>0?'+':''}${fmtNum(d)}</span>`},x:r=>pi(r)-vi(r)},
-      nc('Tối thiểu',r=>r.minStock||0),nc('Giá trị thực tế (VND)',r=>pi(r)*(r.price||0),fmtMoney),
+      nc('Tối thiểu',r=>r.minStock||0),nc('Giá trị thực tế (VND)',r=>amt(pi(r),r.price),fmtMoney),
       {h:'Trạng thái',f:r=>badge(...itemStatus(r,pi(r))),x:r=>itemStatus(r,pi(r))[1]},
       actCol(r=>w&&(pi(r)>0||vi(r)>0)?`<button class="btn sm" data-act="xfer-one" data-id="${r.id}" title="Chuyển sang kho khác">⇄ Chuyển kho</button>`:'')];
-    const tv=rows.reduce((a,r)=>a+pi(r)*(r.price||0),0),tp=rows.reduce((a,r)=>a+pi(r),0),ti=rows.reduce((a,r)=>a+vi(r),0);
+    const tv=rows.reduce((a,r)=>a+amt(pi(r),r.price),0),tp=rows.reduce((a,r)=>a+pi(r),0),ti=rows.reduce((a,r)=>a+vi(r),0);
     return table(cols,rows,{foot:`<tr><td colspan="${w?5:4}">Tổng</td><td class="num">${fmtNum(tp)}</td><td class="num">${fmtNum(ti)}</td><td class="num">${fmtNum(tp-ti)}</td><td></td><td class="num">${fmtMoney(tv)}</td><td colspan="2"></td></tr>`});
   }};
 

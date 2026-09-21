@@ -56,7 +56,7 @@ function renderLines(){
     const qty=`<input class="in" type="text" inputmode="numeric" data-num="int" value="${l.qty}" data-l="${i}:qty" ${tracked?'readonly':''} aria-label="Số lượng">`;
     const del=`<button type="button" class="btn sm danger" data-act="ln-del" data-i="${i}" aria-label="Xoá dòng">✕</button>`;
     const main=isR
-      ?`<div class="ln-main isr">${item}<span class="unit">${esc(it?.unit||'')}</span>${qty}<input class="in" type="text" inputmode="decimal" data-num="money" value="${fmtPrice(l.price)}" data-l="${i}:price" placeholder="Đơn giá (VND)" aria-label="Đơn giá (VND)"><span class="amt">${fmtMoney(l.qty*l.price)} VND</span>${del}</div>`
+      ?`<div class="ln-main isr">${item}<span class="unit">${esc(it?.unit||'')}</span>${qty}<input class="in" type="text" inputmode="decimal" data-num="money" value="${fmtPrice(l.price)}" data-l="${i}:price" placeholder="Đơn giá (VND)" title="Lấy 2 số lẻ. Có thể gõ phép tính, ví dụ 500000/1.08" aria-label="Đơn giá (VND)"><span class="amt">${fmtMoney(amt(l.qty,l.price))} VND</span>${del}</div>`
       :`<div class="ln-main">${item}<span class="unit">${esc(it?.unit||'')}</span>${it?`<span class="stk ${l.qty>avail?'bad':''}">Tồn ${stkTxt}</span>`:'<span></span>'}${qty}${del}</div>`;
     let extra='';
     if(it&&isIT&&isR&&sInt())extra=`<div class="ser"><textarea class="in" placeholder="Serial / Service Tag – mỗi dòng một thiết bị (bỏ trống nếu không quản lý theo Serial)" data-l="${i}:serialsText">${esc(l.serialsText)}</textarea><label class="f"><span>Bảo hành (tháng)</span><input class="in" type="number" min="0" value="${esc(l.warranty)}" data-l="${i}:warranty"></label></div>`;
@@ -69,7 +69,7 @@ function renderLines(){
   renderTotals();
 }
 function renderTotals(){
-  const q=S.lines.reduce((a,l)=>a+(+l.qty||0),0),v=S.lines.reduce((a,l)=>a+(+l.qty||0)*(+l.price||0),0);
+  const q=S.lines.reduce((a,l)=>a+(+l.qty||0),0),v=S.lines.reduce((a,l)=>a+amt(l.qty,l.price),0);
   const t=$('#tot');if(t)t.innerHTML=`<span>Tổng số lượng: ${fmtNum(q)}</span>${S.kind==='receipt'?`<span>Tổng tiền: ${fmtMoney(v)} VND</span>`:''}`;
 }
 function syncLineUI(i){
@@ -77,7 +77,7 @@ function syncLineUI(i){
   if(row){
     const tracked=S.kind==='receipt'?serialsOf(l).length>0:l.assetIds.length>0,q=$('[data-l$=":qty"]',row);
     if(q){if(tracked||document.activeElement!==q)q.value=l.qty;q.readOnly=tracked}
-    const a=$('.amt',row);if(a)a.textContent=fmtMoney(l.qty*l.price)+' VND';
+    const a=$('.amt',row);if(a)a.textContent=fmtMoney(amt(l.qty,l.price))+' VND';
     const sm=$('.asum',row);if(sm)sm.textContent=`đã chọn ${l.assetIds.length}`;
     const st=$('.stk',row);if(st)st.classList.toggle('bad',l.qty>availOf(l));
   }
@@ -87,7 +87,7 @@ function pickItem(i,it){const l=S.lines[i];l.itemId=it.id;l.itemText='';l.assetI
 function lineInput(el){
   const [is,k]=el.dataset.l.split(':'),i=+is,l=S.lines[i];if(!l)return;
   if(k==='itemText'){l.itemText=el.value;const it=itemByText(el.value,true);if(it&&it.id!==l.itemId)pickItem(i,it);return}
-  if(k==='qty'||k==='price')l[k]=num(el.value);else l[k]=el.value;
+  if(k==='qty')l[k]=num(el.value);else if(k==='price')l[k]=r2(num(el.value));else l[k]=el.value;
   if(k==='serialsText'){const n=serialsOf(l).length;if(n>0)l.qty=n}
   syncLineUI(i);
 }
