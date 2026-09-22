@@ -8,7 +8,7 @@
 const kpi=(l,v,s='',tone='')=>`<div class="kpi ${tone}"><div class="kl">${l}</div><div class="kv">${v}</div>${s?`<div class="ks">${s}</div>`:''}</div>`;
 const card=(title,body,cls='')=>`<section class="card ${cls}">${title?`<h4>${title}</h4>`:''}${body}</section>`;
 const miniTable=(heads,rows,empty='Không có dữ liệu.')=>rows.length?`<div class="tw"><table class="t"><thead><tr>${heads.map(h=>`<th>${h}</th>`).join('')}</tr></thead><tbody>${rows.join('')}</tbody></table></div>`:`<div class="note">${empty}</div>`;
-function stockStats(){const m=stockMap();let qty=0,val=0;db.items.forEach(it=>{const t=totalOf(m,it.id);qty+=t;val=r2(val+amt(t,it.price))});return{m,qty,val}}
+function stockStats(){const m=stockMap(),ap=avgPriceMap();let qty=0,val=0;db.items.forEach(it=>{const t=totalOf(m,it.id);qty+=t;val=r2(val+amt(t,avgPriceOf(ap,it.id)))});return{m,qty,ap,val}}
 function monthlyFlow(months,wh=W_INT){
   return months.map(mk=>{
     let iq=0,iv=0,oq=0,ov=0,ic=0,oc=0;
@@ -26,7 +26,7 @@ PAGES['dash/overview']={t:'Tổng quan',
     const {m:sm,qty,val}=stockStats(),invQty=db.items.reduce((a,i)=>a+(sm[i.id]?.[W_INV]||0),0),cur=monthlyFlow([todayStr().slice(0,7)])[0],A=alertsData(),cnt=s=>db.assets.filter(a=>a.status===s).length;
     const recent=[...db.receipts.map(r=>({k:'receipt',r})),...db.issues.map(r=>({k:'issue',r}))].sort((a,b)=>byDateDesc(a.r,b.r)).slice(0,8);
     const na=A.low.length+A.out.length;
-    return `<div class="kpis">${kpi('Mã hàng',fmtNum(db.items.length),'trong danh mục')}${kpi('Tồn thực tế (Kho nội bộ)',fmtNum(qty),'số lượng hàng đang có','info')}${kpi('Tồn theo hóa đơn',fmtNum(invQty),`chênh lệch so với thực tế: ${invQty-qty>0?'+':''}${fmtNum(invQty-qty)}`,'acc')}${kpi('Giá trị tồn (tham chiếu)',fmtMoney(val)+' VND','theo đơn giá gần nhất','acc')}${kpi('Nhập tháng này',fmtNum(cur.iq),`${cur.ic} phiếu`,'ok')}${kpi('Xuất tháng này',fmtNum(cur.oq),`${cur.oc} phiếu`,'warn')}${kpi('Hàng cần bổ sung',na,`${A.out.length} hết hàng · ${A.low.length} sắp hết`,na?'bad':'ok')}</div>
+    return `<div class="kpis">${kpi('Mã hàng',fmtNum(db.items.length),'trong danh mục')}${kpi('Tồn thực tế (Kho nội bộ)',fmtNum(qty),'số lượng hàng đang có','info')}${kpi('Tồn theo hóa đơn',fmtNum(invQty),`chênh lệch so với thực tế: ${invQty-qty>0?'+':''}${fmtNum(invQty-qty)}`,'acc')}${kpi('Giá trị tồn (bình quân gia quyền)',fmtMoney(val)+' VND','theo giá vốn bình quân các phiếu nhập','acc')}${kpi('Nhập tháng này',fmtNum(cur.iq),`${cur.ic} phiếu`,'ok')}${kpi('Xuất tháng này',fmtNum(cur.oq),`${cur.oc} phiếu`,'warn')}${kpi('Hàng cần bổ sung',na,`${A.out.length} hết hàng · ${A.low.length} sắp hết`,na?'bad':'ok')}</div>
     <div class="grid g2">${card('Nhập / Xuất 6 tháng gần nhất (số lượng)','<div class="ch"><canvas id="c1"></canvas></div>')}${card('Giá trị tồn theo danh mục','<div class="ch"><canvas id="c2"></canvas></div>')}</div>
     <div class="grid g2">${card('Thiết bị IT',`<div class="kpis sm" style="margin:0">${kpi('Trong kho',cnt('in_stock'),'','ok')}${kpi('Đã cấp phát',cnt('assigned'),'','info')}${kpi('Sửa chữa',cnt('repair'),'','warn')}${kpi('Thanh lý',cnt('retired'))}</div><div class="note">Bảo hành hết hạn / sắp hết hạn (≤ 60 ngày): <b>${A.warr.length}</b> · <a href="#/dash/alerts">Xem cảnh báo</a></div>`)}
     ${card('Phiếu gần đây',miniTable(['Phiếu','Ngày','Loại','Đối tượng','SL'],recent.map(({k,r})=>`<tr><td>${slipLink(k,r)}</td><td>${fmtDate(r.date)}</td><td>${k==='receipt'?badge('ok','Nhập'):badge('warn','Xuất')}</td><td>${esc(k==='receipt'?(r.supplierId?nm(db.suppliers,r.supplierId):'—'):targetLabel(r.targetType,r.targetId))}</td><td class="num">${fmtNum(slipTotals(r).q)}</td></tr>`),'Chưa có phiếu nào.'))}</div>`;
@@ -34,7 +34,7 @@ PAGES['dash/overview']={t:'Tổng quan',
   m(){
     const ms=lastMonths(6),fl=monthlyFlow(ms);
     chart('c1',{type:'bar',data:{labels:ms.map(mLabel),datasets:[{label:'Nhập',data:fl.map(x=>x.iq),backgroundColor:PAL[3]},{label:'Xuất',data:fl.map(x=>x.oq),backgroundColor:PAL[0]}]},options:baseOpt({scales:{y:{beginAtZero:true}}})});
-    const {m}=stockStats(),rows=db.categories.map(c=>({n:c.name,v:db.items.filter(i=>i.categoryId===c.id).reduce((a,i)=>a+amt(totalOf(m,i.id),i.price),0),q:db.items.filter(i=>i.categoryId===c.id).reduce((a,i)=>a+totalOf(m,i.id),0)})).filter(x=>x.v>0||x.q>0);
+    const {m,ap}=stockStats(),rows=db.categories.map(c=>({n:c.name,v:db.items.filter(i=>i.categoryId===c.id).reduce((a,i)=>a+amt(totalOf(m,i.id),avgPriceOf(ap,i.id)),0),q:db.items.filter(i=>i.categoryId===c.id).reduce((a,i)=>a+totalOf(m,i.id),0)})).filter(x=>x.v>0||x.q>0);
     const useV=rows.some(x=>x.v>0);
     chart('c2',{type:'doughnut',data:{labels:rows.map(x=>x.n),datasets:[{data:rows.map(x=>useV?x.v:x.q),backgroundColor:PAL}]},options:baseOpt()});
   }};
@@ -45,14 +45,14 @@ function diffCard(m){
 }
 PAGES['dash/stock']={t:'Tồn kho',
   r(){
-    const {m}=stockStats(),rows=db.categories.map(c=>{const its=db.items.filter(i=>i.categoryId===c.id);return{n:c.name,codes:its.length,q:its.reduce((a,i)=>a+totalOf(m,i.id),0),v:its.reduce((a,i)=>a+amt(totalOf(m,i.id),i.price),0)}}).filter(x=>x.codes);
+    const {m,ap}=stockStats(),rows=db.categories.map(c=>{const its=db.items.filter(i=>i.categoryId===c.id);return{n:c.name,codes:its.length,q:its.reduce((a,i)=>a+totalOf(m,i.id),0),v:its.reduce((a,i)=>a+amt(totalOf(m,i.id),avgPriceOf(ap,i.id)),0)}}).filter(x=>x.codes);
     const A=alertsData();
     return `<div class="grid g2">${card('Top 10 hàng có giá trị tồn cao nhất','<div class="ch tall"><canvas id="c1"></canvas></div>')}${card('Tổng số lượng theo kho','<div class="ch tall"><canvas id="c2"></canvas></div>')}</div>
     ${card('Tồn kho theo danh mục',miniTable(['Danh mục','Số mã','Tổng SL','Giá trị (VND)'],rows.map(x=>`<tr><td>${esc(x.n)}</td><td class="num">${x.codes}</td><td class="num">${fmtNum(x.q)}</td><td class="num">${fmtMoney(x.v)}</td></tr>`)))}
-    ${diffCard(m)}${card(`Hàng sắp hết / hết hàng (${A.low.length+A.out.length})`,miniTable(['Mã','Tên hàng','Tồn','Tối thiểu','Trạng thái'],[...A.out,...A.low].map(({it,t})=>`<tr><td>${esc(it.sku)}</td><td>${esc(it.name)}</td><td class="num">${fmtNum(t)}</td><td class="num">${fmtNum(it.minStock)}</td><td>${badge(...itemStatus(it,t))}</td></tr>`),'Không có hàng nào cần bổ sung.'))}`;
+    ${diffCard(m)}${card(`Hàng sắp hết / hết hàng (${A.low.length+A.out.length})`,miniTable(['Mã','Tên hàng','Tồn (Kho hóa đơn)','Tối thiểu','Trạng thái'],[...A.out,...A.low].map(({it,t})=>`<tr><td>${esc(it.sku)}</td><td>${esc(it.name)}</td><td class="num">${fmtNum(t)}</td><td class="num">${fmtNum(it.minStock)}</td><td>${badge(...itemStatus(it,t))}</td></tr>`),'Không có hàng nào cần bổ sung.'))}`;
   },
   m(){
-    const {m}=stockStats(),top=db.items.map(i=>({n:i.name,v:amt(totalOf(m,i.id),i.price)})).filter(x=>x.v>0).sort((a,b)=>b.v-a.v).slice(0,10);
+    const {m,ap}=stockStats(),top=db.items.map(i=>({n:i.name,v:amt(totalOf(m,i.id),avgPriceOf(ap,i.id))})).filter(x=>x.v>0).sort((a,b)=>b.v-a.v).slice(0,10);
     chart('c1',{type:'bar',data:{labels:top.map(x=>x.n.length>26?x.n.slice(0,25)+'…':x.n),datasets:[{label:'Giá trị (VND)',data:top.map(x=>x.v),backgroundColor:PAL[0]}]},options:baseOpt({indexAxis:'y',plugins:{legend:{display:false}}})});
     const sumW=w=>db.items.reduce((a,i)=>a+(m[i.id]?.[w]||0),0);
     chart('c2',{type:'bar',data:{labels:['Kho nội bộ (thực tế)','Kho hóa đơn'],datasets:[{label:'Tổng số lượng',data:[sumW(W_INT),sumW(W_INV)],backgroundColor:[PAL[1],PAL[0]]}]},options:baseOpt({plugins:{legend:{display:false}},scales:{y:{beginAtZero:true}}})});
@@ -75,8 +75,9 @@ PAGES['dash/alerts']={t:'Cảnh báo',
   r(){
     const A=alertsData(),t0=todayStr();
     const stRows=l=>l.map(({it,t})=>`<tr><td>${esc(it.sku)}</td><td>${esc(it.name)}</td><td>${esc(nm(db.categories,it.categoryId))}</td><td class="num">${fmtNum(t)}</td><td class="num">${fmtNum(it.minStock)}</td><td>${badge(...itemStatus(it,t))}</td></tr>`);
-    const H=['Mã','Tên hàng','Danh mục','Tồn','Tối thiểu','Trạng thái'];
+    const H=['Mã','Tên hàng','Danh mục','Tồn (Kho hóa đơn)','Tối thiểu','Trạng thái'];
     return `<div class="kpis">${kpi('Hết hàng',A.out.length,'','bad')}${kpi('Sắp hết',A.low.length,'tồn ≤ mức tối thiểu','warn')}${kpi('Bảo hành ≤ 60 ngày',A.warr.length,'gồm đã hết hạn','info')}${kpi('Đang sửa chữa',A.repair.length,'','acc')}</div>
+    <p class="note">Hết hàng / sắp hết được tính theo <b>tồn Kho hóa đơn</b>, không theo Kho nội bộ.</p>
     ${card('Hết hàng',miniTable(H,stRows(A.out),'Không có mặt hàng nào hết hàng.'))}
     ${card('Sắp hết hàng',miniTable(H,stRows(A.low),'Không có mặt hàng nào dưới mức tối thiểu.'))}
     ${card('Bảo hành thiết bị IT',miniTable(['Mã TS','Thiết bị','Serial','Trạng thái','Hết bảo hành'],A.warr.map(a=>`<tr><td>${esc(a.tag)}</td><td>${esc(nm(db.items,a.itemId))}</td><td>${esc(a.serial||'—')}</td><td>${badge(...ST[a.status])}</td><td class="${a.warrantyEnd<t0?'tag-bad':'tag-warn'}">${fmtDate(a.warrantyEnd)} ${a.warrantyEnd<t0?'(đã hết)':''}</td></tr>`),'Không có thiết bị nào sắp hết bảo hành.'))}

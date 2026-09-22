@@ -11,13 +11,13 @@ PAGES['rpt/monthly']={t:'Báo cáo Nhập – Xuất – Tồn theo tháng',
   sub(){const f=F();return `Tháng ${(f.month||todayStr().slice(0,7)).split('-').reverse().join('/')} · ${whName(f.wh||W_INT)}`},
   head(){return `<div class="bar">${fMonth('month','Tháng',todayStr().slice(0,7))}${fSel('wh','Kho',stockWhOpts())}${fSel('cat','Danh mục',catOpts())}<div class="sp"></div>${rptBtns('nxt-thang')}</div>`},
   tbl(){
-    const f=F(),mk=f.month||todayStr().slice(0,7),from=mk+'-01',to=addDays(addMonths(from,1),-1),wh=f.wh||W_INT;
+    const f=F(),mk=f.month||todayStr().slice(0,7),from=mk+'-01',to=addDays(addMonths(from,1),-1),wh=f.wh||W_INT,ap=avgPriceMap();
     const op=stockMap(from,true),cl=stockMap(to),fi=flow('receipts',from,to,wh),fo=flow('issues',from,to,wh);
     const rows=db.items.filter(i=>!f.cat||i.categoryId===f.cat).map(i=>{const o=qtyIn(op,i.id,wh),c=qtyIn(cl,i.id,wh),a=fi[i.id]?.qty||0,b=fo[i.id]?.qty||0;return{i,o,a,b,adj:Math.round((c-o-a+b)*1000)/1000,c}}).filter(r=>r.o||r.a||r.b||r.adj||r.c);
     const sum=k=>rows.reduce((s,r)=>s+r[k],0);
     const vi=Object.values(fi).reduce((s,x)=>s+x.val,0),vo=Object.values(fo).reduce((s,x)=>s+x.val,0);
     return `<div class="kpis">${kpi('Tồn đầu kỳ',fmtNum(sum('o')))}${kpi('Nhập trong tháng',fmtNum(sum('a')),fmtMoney(vi)+' VND','ok')}${kpi('Xuất trong tháng',fmtNum(sum('b')),fmtMoney(vo)+' VND','warn')}${kpi('Tồn cuối kỳ',fmtNum(sum('c')),'','info')}</div>`+
-    table([{h:'Mã hàng',f:r=>`<b>${esc(r.i.sku)}</b>`,x:r=>r.i.sku},{h:'Tên hàng hóa',f:r=>esc(r.i.name),x:r=>r.i.name},{h:'ĐVT',f:r=>esc(r.i.unit)},nc('Tồn đầu',r=>r.o),nc('Nhập',r=>r.a),nc('Xuất',r=>r.b),nc('Điều chỉnh',r=>r.adj),nc('Tồn cuối',r=>r.c),nc('Giá trị tồn cuối (VND)',r=>amt(r.c,r.i.price),fmtMoney)],rows,{empty:'Không có phát sinh trong tháng này.',foot:`<tr><td colspan="3">Tổng</td><td class="num">${fmtNum(sum('o'))}</td><td class="num">${fmtNum(sum('a'))}</td><td class="num">${fmtNum(sum('b'))}</td><td class="num">${fmtNum(sum('adj'))}</td><td class="num">${fmtNum(sum('c'))}</td><td class="num">${fmtMoney(rows.reduce((s,r)=>s+amt(r.c,r.i.price),0))}</td></tr>`});
+    table([{h:'Mã hàng',f:r=>`<b>${esc(r.i.sku)}</b>`,x:r=>r.i.sku},{h:'Tên hàng hóa',f:r=>esc(r.i.name),x:r=>r.i.name},{h:'ĐVT',f:r=>esc(r.i.unit)},nc('Tồn đầu',r=>r.o),nc('Nhập',r=>r.a),nc('Xuất',r=>r.b),nc('Điều chỉnh',r=>r.adj),nc('Tồn cuối',r=>r.c),nc('Đơn giá bình quân (VND)',r=>avgPriceOf(ap,r.i.id),fmtMoney),nc('Giá trị tồn cuối (VND)',r=>amt(r.c,avgPriceOf(ap,r.i.id)),fmtMoney)],rows,{empty:'Không có phát sinh trong tháng này.',foot:`<tr><td colspan="3">Tổng</td><td class="num">${fmtNum(sum('o'))}</td><td class="num">${fmtNum(sum('a'))}</td><td class="num">${fmtNum(sum('b'))}</td><td class="num">${fmtNum(sum('adj'))}</td><td class="num">${fmtNum(sum('c'))}</td><td></td><td class="num">${fmtMoney(rows.reduce((s,r)=>s+amt(r.c,avgPriceOf(ap,r.i.id)),0))}</td></tr>`});
   }};
 function issueReport(type,title){
   const targets=()=>type==='project'?db.projects.map(p=>[p.id,`${p.code} – ${p.name}`]):db.retail.map(c=>[c.id,c.name]);
@@ -46,9 +46,9 @@ PAGES['rpt/category']={t:'Báo cáo theo loại thiết bị',
   sub(){const f=F();return `${whName(f.wh||W_INT)} · ${periodSub(f.from??firstOfYear(),f.to??todayStr())}`},
   head(){return `<div class="bar">${fSel('wh','Kho',stockWhOpts())}${fDate('from','Từ',firstOfYear())}${fDate('to','Đến',todayStr())}<div class="sp"></div>${rptBtns('bao-cao-loai-thiet-bi')}</div>`},
   data(){
-    const f=F(),from=f.from??firstOfYear(),to=f.to??todayStr(),m=stockMap(),fi=flow('receipts',from,to,f.wh),fo=flow('issues',from,to,f.wh);
+    const f=F(),from=f.from??firstOfYear(),to=f.to??todayStr(),m=stockMap(),ap=avgPriceMap(),fi=flow('receipts',from,to,f.wh),fo=flow('issues',from,to,f.wh);
     return db.categories.map(c=>{const its=db.items.filter(i=>i.categoryId===c.id),as=db.assets.filter(a=>itemOf(a.itemId)?.categoryId===c.id);
-      return{c,codes:its.length,q:its.reduce((s,i)=>s+qtyIn(m,i.id,f.wh),0),v:its.reduce((s,i)=>s+amt(qtyIn(m,i.id,f.wh),i.price),0),a:its.reduce((s,i)=>s+(fi[i.id]?.qty||0),0),b:its.reduce((s,i)=>s+(fo[i.id]?.qty||0),0),ak:as.filter(x=>x.status==='in_stock').length,ac:as.filter(x=>x.status==='assigned').length,ar:as.filter(x=>x.status==='repair').length,at:as.length}}).filter(r=>r.codes);
+      return{c,codes:its.length,q:its.reduce((s,i)=>s+qtyIn(m,i.id,f.wh),0),v:its.reduce((s,i)=>s+amt(qtyIn(m,i.id,f.wh),avgPriceOf(ap,i.id)),0),a:its.reduce((s,i)=>s+(fi[i.id]?.qty||0),0),b:its.reduce((s,i)=>s+(fo[i.id]?.qty||0),0),ak:as.filter(x=>x.status==='in_stock').length,ac:as.filter(x=>x.status==='assigned').length,ar:as.filter(x=>x.status==='repair').length,at:as.length}}).filter(r=>r.codes);
   },
   tbl(){
     const rows=this.data();
@@ -91,11 +91,12 @@ PAGES['rpt/stock']={t:'Báo cáo tồn kho',
   head(){return `<div class="bar">${fDate('from','Từ ngày',firstOfMonth())}${fDate('to','Đến ngày',todayStr())}${fSel('wh','Kho',stockWhOpts())}${fSel('cat','Danh mục',catOpts())}${fSel('st','Hiển thị',[['','Mặt hàng có tồn hoặc phát sinh'],['move','Chỉ mặt hàng có phát sinh trong kỳ']])}${fSearch('Tìm mã / tên hàng…')}<div class="sp"></div>${rptBtns('bao-cao-ton-kho')}</div>
     <div class="bar" style="margin-top:-6px"><span class="muted" style="font-size:12.5px">Chọn nhanh:</span>${[['today','Hôm nay'],['month','Tháng này'],['lastmonth','Tháng trước'],['quarter','Quý này'],['year','Năm nay'],['lastyear','Năm trước']].map(([p,l])=>`<button class="btn sm" data-act="rng" data-p="${p}">${l}</button>`).join('')}</div>`},
   tbl(){
-    const f=F(),from=f.from??firstOfMonth(),to=f.to??todayStr(),wh=f.wh||W_INT,q=norm(f.q||'');
+    const f=F(),from=f.from??firstOfMonth(),to=f.to??todayStr(),wh=f.wh||W_INT,q=norm(f.q||''),ap=avgPriceMap();
     if(from&&to&&from>to)return '<div class="empty">Ngày bắt đầu phải nhỏ hơn hoặc bằng ngày kết thúc.</div>';
     const op=stockMap(from,true),cl=stockMap(to),fi=flow('receipts',from,to,wh),fo=flow('issues',from,to,wh);
     const rows=db.items.filter(i=>(!f.cat||i.categoryId===f.cat)&&(!q||norm(i.sku+' '+i.name).includes(q))).map(i=>{const o=qtyIn(op,i.id,wh),c=qtyIn(cl,i.id,wh),a=fi[i.id]?.qty||0,b=fo[i.id]?.qty||0;return{i,o,a,b,adj:c-o-a+b,c}}).filter(r=>(r.o||r.a||r.b||r.adj||r.c)&&(f.st!=='move'||r.a||r.b||r.adj)).sort((x,y)=>x.i.sku.localeCompare(y.i.sku));
-    const sum=k=>rows.reduce((s,r)=>s+r[k],0),val=rows.reduce((s,r)=>s+amt(r.c,r.i.price),0);
-    return `<div class="kpis">${kpi('Tồn đầu kỳ',fmtNum(sum('o')))}${kpi('Nhập trong kỳ',fmtNum(sum('a')),'','ok')}${kpi('Xuất trong kỳ',fmtNum(sum('b')),'','warn')}${kpi('Tồn cuối kỳ',fmtNum(sum('c')),`${fmtMoney(val)} VND`,'info')}</div>`+
-    table([{h:'Mã hàng',f:r=>`<b>${esc(r.i.sku)}</b>`,x:r=>r.i.sku},{h:'Tên hàng hóa',f:r=>esc(r.i.name),x:r=>r.i.name},{h:'Danh mục',f:r=>esc(nm(db.categories,r.i.categoryId))},{h:'ĐVT',f:r=>esc(r.i.unit)},nc('Tồn đầu kỳ',r=>r.o),nc('Nhập',r=>r.a),nc('Xuất',r=>r.b),nc('Điều chỉnh',r=>r.adj),nc('Tồn cuối kỳ',r=>r.c),nc('Đơn giá (VND)',r=>r.i.price||0,fmtMoney),nc('Giá trị cuối kỳ (VND)',r=>amt(r.c,r.i.price),fmtMoney)],rows,{empty:'Không có dữ liệu trong khoảng thời gian này.',foot:`<tr><td colspan="4">Tổng</td><td class="num">${fmtNum(sum('o'))}</td><td class="num">${fmtNum(sum('a'))}</td><td class="num">${fmtNum(sum('b'))}</td><td class="num">${fmtNum(sum('adj'))}</td><td class="num">${fmtNum(sum('c'))}</td><td></td><td class="num">${fmtMoney(val)}</td></tr>`});
+    const sum=k=>rows.reduce((s,r)=>s+r[k],0),val=rows.reduce((s,r)=>s+amt(r.c,avgPriceOf(ap,r.i.id)),0);
+    return `<div class="kpis">${kpi('Tồn đầu kỳ',fmtNum(sum('o')))}${kpi('Nhập trong kỳ',fmtNum(sum('a')),'','ok')}${kpi('Xuất trong kỳ',fmtNum(sum('b')),'','warn')}${kpi('Tồn cuối kỳ',fmtNum(sum('c')),`${fmtMoney(val)} VND`,'info')}</div>
+    <p class="note">Đơn giá bình quân = giá vốn bình quân gia quyền các phiếu nhập của mã hàng.</p>`+
+    table([{h:'Mã hàng',f:r=>`<b>${esc(r.i.sku)}</b>`,x:r=>r.i.sku},{h:'Tên hàng hóa',f:r=>esc(r.i.name),x:r=>r.i.name},{h:'Danh mục',f:r=>esc(nm(db.categories,r.i.categoryId))},{h:'ĐVT',f:r=>esc(r.i.unit)},nc('Tồn đầu kỳ',r=>r.o),nc('Nhập',r=>r.a),nc('Xuất',r=>r.b),nc('Điều chỉnh',r=>r.adj),nc('Tồn cuối kỳ',r=>r.c),nc('Đơn giá bình quân (VND)',r=>avgPriceOf(ap,r.i.id),fmtMoney),nc('Giá trị cuối kỳ (VND)',r=>amt(r.c,avgPriceOf(ap,r.i.id)),fmtMoney)],rows,{empty:'Không có dữ liệu trong khoảng thời gian này.',foot:`<tr><td colspan="4">Tổng</td><td class="num">${fmtNum(sum('o'))}</td><td class="num">${fmtNum(sum('a'))}</td><td class="num">${fmtNum(sum('b'))}</td><td class="num">${fmtNum(sum('adj'))}</td><td class="num">${fmtNum(sum('c'))}</td><td></td><td class="num">${fmtMoney(val)}</td></tr>`});
   }};

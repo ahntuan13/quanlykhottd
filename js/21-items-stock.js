@@ -7,7 +7,7 @@
    ===================================================================== */
 const itemUsed=id=>db.receipts.some(r=>r.lines.some(l=>l.itemId===id))||db.issues.some(r=>r.lines.some(l=>l.itemId===id))||db.adjustments.some(a=>a.itemId===id)||db.stocktakes.some(s=>s.lines.some(l=>l.itemId===id))||db.assets.some(a=>a.itemId===id);
 PAGES['wh/items']={t:'Danh sách hàng hóa',
-  head(){const w=can('write');return `<div class="bar">${fSearch('Tìm mã / tên hàng…')}${fSel('cat','Danh mục',catOpts())}<div class="sp"></div>${w?'<button class="btn" data-act="tpl-items">Mẫu Excel</button><button class="btn" data-act="imp-items">⬆ Nhập từ Excel</button>':''}<button class="btn" data-act="export" data-name="hang-hoa">⬇ Excel</button>${w?'<button class="btn acc" data-act="item-new">＋ Thêm hàng hóa</button>':''}</div>`},
+  head(){const w=can('write');return `<div class="bar">${fSearch('Tìm mã / tên hàng…')}${fSel('cat','Danh mục',catOpts())}<div class="sp"></div>${w?'<button class="btn" data-act="tpl-items">Mẫu Excel</button><button class="btn" data-act="imp-items">⬆ Nhập từ Excel</button>':''}<button class="btn" data-act="export" data-name="hang-hoa">⬇ Excel</button>${w?'<button class="btn acc" data-act="item-new">＋ Thêm hàng hóa</button>':''}</div><p class="note">Cột <b>Tồn</b> là tồn Kho nội bộ (thực tế); <b>Trạng thái</b> tính theo tồn <b>Kho hóa đơn</b>.</p>`},
   tbl(){
     const f=F(),q=(f.q||'').toLowerCase(),m=stockMap(),w=can('write');
     const rows=db.items.filter(i=>(!f.cat||i.categoryId===f.cat)&&(!q||(i.sku+' '+i.name).toLowerCase().includes(q))).sort((a,b)=>a.sku.localeCompare(b.sku));
@@ -16,7 +16,7 @@ PAGES['wh/items']={t:'Danh sách hàng hóa',
       {h:'Tên hàng hóa',f:r=>`${esc(r.name)}${catOf(r.categoryId)?.isIT?' '+badge('info','IT'):''}`,x:r=>r.name},
       {h:'Danh mục',f:r=>esc(nm(db.categories,r.categoryId))},{h:'ĐVT',f:r=>esc(r.unit)},
       nc('Tồn',r=>totalOf(m,r.id)),nc('Tối thiểu',r=>r.minStock||0),nc('Đơn giá (VND)',r=>r.price||0,fmtMoney),
-      {h:'Trạng thái',f:r=>badge(...itemStatus(r,totalOf(m,r.id))),x:r=>itemStatus(r,totalOf(m,r.id))[1]},
+      {h:'Trạng thái',f:r=>badge(...itemStatus(r,invOf(m,r.id))),x:r=>itemStatus(r,invOf(m,r.id))[1]},
       actCol(r=>w?`<button class="btn sm" data-act="item-edit" data-id="${r.id}">Sửa</button> <button class="btn sm danger" data-act="item-del" data-id="${r.id}">Xoá</button>`:'')
     ],rows,{empty:'Chưa có hàng hóa. Bấm “Thêm hàng hóa” hoặc nhập từ Excel.'});
   }};
@@ -74,20 +74,20 @@ function importItems(file){
 function stockRows(){
   const f=F(),q=(f.q||'').toLowerCase(),m=stockMap(),map={bad:'out',warn:'low',ok:'ok'};
   const pi=i=>m[i.id]?.[W_INT]||0,vi=i=>m[i.id]?.[W_INV]||0;
-  const rows=db.items.filter(i=>(!f.cat||i.categoryId===f.cat)&&(!q||(i.sku+' '+i.name).toLowerCase().includes(q))&&(!f.st||(f.st==='diff'?pi(i)!==vi(i):map[itemStatus(i,pi(i))[0]]===f.st))).sort((a,b)=>a.sku.localeCompare(b.sku));
+  const rows=db.items.filter(i=>(!f.cat||i.categoryId===f.cat)&&(!q||(i.sku+' '+i.name).toLowerCase().includes(q))&&(!f.st||(f.st==='diff'?pi(i)!==vi(i):map[itemStatus(i,vi(i))[0]]===f.st))).sort((a,b)=>a.sku.localeCompare(b.sku));
   return{rows,pi,vi};
 }
 PAGES['wh/stock']={t:'Tồn kho',
-  head(){const w=can('write');return `<div class="bar">${fSearch('Tìm mã / tên hàng…')}${fSel('cat','Danh mục',catOpts())}${fSel('st','Trạng thái',[['','Mọi trạng thái'],['out','Hết hàng'],['low','Sắp hết'],['ok','Còn hàng'],['diff','Hóa đơn ≠ thực tế']])}${fSel('view','Xem theo kho',[['both','Cả hai kho'],['int','Kho nội bộ (thực tế)'],['inv','Kho hóa đơn']])}<div class="sp"></div>${w?'<button class="btn" data-act="xfer-sel" title="Chuyển kho các mặt hàng đã tick">⇄ Chuyển kho các mục đã chọn</button><button class="btn" data-act="xfer-all" title="Chuyển kho tất cả mặt hàng đang lọc">⇄ Chuyển tất cả (đang lọc)</button><button class="btn" data-act="up-stock">⬆ Upload file Tồn kho</button>':''}<button class="btn" data-act="xfer-hist">🕘 Lịch sử chuyển kho</button><button class="btn" data-act="export" data-name="ton-kho">⬇ Excel</button></div><p class="note"><b>Kho nội bộ</b> là tồn hàng thực tế (dùng để cảnh báo hết hàng, tính giá trị tồn). <b>Kho hóa đơn</b> là số lượng theo hóa đơn nhập / xuất. Dùng bộ lọc <b>Xem theo kho</b> để chỉ xem một kho. Nhập nhầm kho? Bấm <b>⇄ Chuyển kho</b> ở từng dòng (hoặc tick nhiều dòng) để chuyển sang đúng kho; chuyển nhầm thì hoàn tác trong <b>Lịch sử chuyển kho</b>.</p>`},
+  head(){const w=can('write');return `<div class="bar">${fSearch('Tìm mã / tên hàng…')}${fSel('cat','Danh mục',catOpts())}${fSel('st','Trạng thái',[['','Mọi trạng thái'],['out','Hết hàng'],['low','Sắp hết'],['ok','Còn hàng'],['diff','Hóa đơn ≠ thực tế']])}${fSel('view','Xem theo kho',[['both','Cả hai kho'],['int','Kho nội bộ (thực tế)'],['inv','Kho hóa đơn']])}<div class="sp"></div>${w?'<button class="btn" data-act="xfer-sel" title="Chuyển kho các mặt hàng đã tick">⇄ Chuyển kho các mục đã chọn</button><button class="btn" data-act="xfer-all" title="Chuyển kho tất cả mặt hàng đang lọc">⇄ Chuyển tất cả (đang lọc)</button><button class="btn" data-act="up-stock">⬆ Upload file Tồn kho</button>':''}<button class="btn" data-act="xfer-hist">🕘 Lịch sử chuyển kho</button><button class="btn" data-act="export" data-name="ton-kho">⬇ Excel</button></div><p class="note"><b>Kho nội bộ</b> là tồn hàng thực tế. <b>Kho hóa đơn</b> là số lượng theo hóa đơn nhập / xuất, và là căn cứ để báo <b>Trạng thái</b> hết hàng / sắp hết / còn hàng. <b>Đơn giá bình quân</b> là giá vốn bình quân gia quyền từ các phiếu nhập của mã hàng. Dùng bộ lọc <b>Xem theo kho</b> để chỉ xem một kho. Nhập nhầm kho? Bấm <b>⇄ Chuyển kho</b> ở từng dòng (hoặc tick nhiều dòng) để chuyển sang đúng kho; chuyển nhầm thì hoàn tác trong <b>Lịch sử chuyển kho</b>.</p>`},
   tbl(){
-    const {rows,pi,vi}=stockRows(),w=can('write'),view=F().view||'both';
+    const {rows,pi,vi}=stockRows(),w=can('write'),view=F().view||'both',ap=avgPriceMap(),price=r=>avgPriceOf(ap,r.id);
     const whCols=view==='int'?[nc('Kho nội bộ (thực tế)',pi)]:view==='inv'?[nc('Kho hóa đơn',vi)]:[nc('Kho nội bộ (thực tế)',pi),nc('Kho hóa đơn',vi)];
     const cols=[...(w?[{h:'<input type="checkbox" data-act="xf-pickall" aria-label="Chọn tất cả">',noexp:1,f:r=>`<input type="checkbox" class="xfpick" value="${r.id}">`}]:[]),{h:'Mã hàng',f:r=>`<b>${esc(r.sku)}</b>`,x:r=>r.sku},{h:'Tên hàng hóa',f:r=>esc(r.name),x:r=>r.name},{h:'Danh mục',f:r=>esc(nm(db.categories,r.categoryId))},{h:'ĐVT',f:r=>esc(r.unit)},
       ...whCols,
-      nc('Tối thiểu',r=>r.minStock||0),nc('Đơn giá (VND)',r=>r.price||0,fmtMoney),nc('Giá trị thực tế (VND)',r=>amt(pi(r),r.price),fmtMoney),
-      {h:'Trạng thái',f:r=>badge(...itemStatus(r,pi(r))),x:r=>itemStatus(r,pi(r))[1]},
+      nc('Tối thiểu',r=>r.minStock||0),nc('Đơn giá bình quân (VND)',price,fmtMoney),nc('Giá trị thực tế (VND)',r=>amt(pi(r),price(r)),fmtMoney),
+      {h:'Trạng thái',f:r=>badge(...itemStatus(r,vi(r))),x:r=>itemStatus(r,vi(r))[1]},
       actCol(r=>w&&(pi(r)>0||vi(r)>0)?`<button class="btn sm" data-act="xfer-one" data-id="${r.id}" title="Chuyển sang kho khác">⇄ Chuyển kho</button>`:'')];
-    const tv=rows.reduce((a,r)=>a+amt(pi(r),r.price),0),lead=(w?1:0)+4;
+    const tv=rows.reduce((a,r)=>a+amt(pi(r),price(r)),0),lead=(w?1:0)+4;
     const whFoot=view==='int'?`<td class="num">${fmtNum(rows.reduce((a,r)=>a+pi(r),0))}</td>`:view==='inv'?`<td class="num">${fmtNum(rows.reduce((a,r)=>a+vi(r),0))}</td>`:`<td class="num">${fmtNum(rows.reduce((a,r)=>a+pi(r),0))}</td><td class="num">${fmtNum(rows.reduce((a,r)=>a+vi(r),0))}</td>`;
     return table(cols,rows,{foot:`<tr><td colspan="${lead}">Tổng</td>${whFoot}<td></td><td></td><td class="num">${fmtMoney(tv)}</td><td colspan="2"></td></tr>`});
   }};

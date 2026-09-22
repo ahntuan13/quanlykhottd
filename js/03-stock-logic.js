@@ -16,6 +16,7 @@ function stockMap(asOf,exclusive){
 }
 /* Tồn "tổng" = tồn thực tế (Kho nội bộ). Kho hóa đơn là sổ theo hóa đơn nên không cộng gộp. */
 const totalOf=(m,id)=>m[id]?.[W_INT]||0;
+const invOf=(m,id)=>m[id]?.[W_INV]||0;
 const qtyIn=(m,id,wh)=>m[id]?.[wh||W_INT]||0;
 function findNegative(){const m=stockMap();for(const i in m)for(const w in m[i])if(m[i][w]<-1e-9)return `${nm(db.items,i)} tại ${whName(w)} (${fmtNum(m[i][w])})${w===W_INV?'. Kho hóa đơn chưa đủ số lượng theo hóa đơn nhập: hãy nhập hóa đơn đầu vào trước, hoặc chọn “Chỉ Kho nội bộ” cho phiếu này':''}`;return null}
 function flow(kind,from,to,wh){
@@ -26,11 +27,25 @@ function flow(kind,from,to,wh){
   });
   return o;
 }
+/* Giá vốn bình quân gia quyền: trung bình đơn giá các phiếu nhập của một mã hàng, theo số lượng.
+   Dùng để TÍNH GIÁ TRỊ TỒN trên Dashboard, Kho > Tồn kho và các Báo cáo — không đổi số tiền đã ghi trên
+   từng phiếu (l.price của từng dòng phiếu là lịch sử, giữ nguyên). Không có phiếu nhập nào thì lấy tạm
+   đơn giá tham chiếu của hàng hóa (Sửa hàng hóa). */
+function avgPriceMap(){
+  const m={};
+  db.receipts.forEach(r=>r.lines.forEach(l=>{
+    if(!(l.price>0))return;const o=(m[l.itemId]??={q:0,v:0}),qty=+l.qty||0;
+    o.q+=qty;o.v=r2(o.v+amt(qty,l.price));
+  }));
+  return m;
+}
+const avgPriceOf=(map,id)=>{const o=map[id];return o&&o.q>0?r2(o.v/o.q):(itemOf(id)?.price||0)};
+/* Trạng thái hết hàng / sắp hết / còn hàng nay tính theo TỒN KHO HÓA ĐƠN (t = số lượng ở Kho hóa đơn), không theo Kho nội bộ. */
 function itemStatus(it,t){if(t<=0)return['bad','Hết hàng'];if(it.minStock>0&&t<=it.minStock)return['warn','Sắp hết'];return['ok','Còn hàng']}
 function alertsData(){
   const m=stockMap(),moved=new Set();db.receipts.forEach(r=>r.lines.forEach(l=>moved.add(l.itemId)));
   const low=[],out=[];
-  db.items.forEach(it=>{const t=totalOf(m,it.id);
+  db.items.forEach(it=>{const t=invOf(m,it.id);
     if(t<=0){if(moved.has(it.id)||it.minStock>0)out.push({it,t})}
     else if(it.minStock>0&&t<=it.minStock)low.push({it,t});
   });
