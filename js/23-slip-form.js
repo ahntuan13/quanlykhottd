@@ -19,11 +19,11 @@ function slipOpen(kind,id,preset){
   const mode=rec?modeOf(slipWhs(rec)):(kind==='issue'&&preset==='retail'?'int':'both');
   const dv=db.company.defaultVatRate||0;
   if(kind==='receipt')S={kind,id:id||null,date:rec?.date||todayStr(),mode,supplierId:rec?.supplierId||'',ref:rec?.ref||'',invoiceDate:rec?.invoiceDate||'',
-    vatRate:rec?(rec.vatRate??0):dv,paymentMethod:rec?.paymentMethod||'',deliveryAddress:rec?(rec.deliveryAddress||''):(db.company.address||''),note:rec?.note||'',
+    vatRate:rec?(rec.vatRate??0):dv,paymentMethod:rec?(rec.paymentMethod||'TM/CK'):'TM/CK',deliveryAddress:rec?(rec.deliveryAddress||''):(db.company.address||''),note:rec?.note||'',
     lines:rec?rec.lines.map(l=>({itemId:l.itemId,itemText:'',qty:l.qty,price:l.price||0,serialsText:(l.serials||[]).join('\n'),warranty:l.warranty||'',assetIds:[]})):[newLine()]};
   else{const orig={};if(rec)rec.lines.forEach(l=>{orig[l.itemId]=(orig[l.itemId]||0)+(+l.qty||0)});
     S={kind,id:id||null,date:rec?.date||todayStr(),mode,origWhs:rec?slipWhs(rec):[],orig,targetType:rec?.targetType||preset||'retail',targetId:rec?.targetId||'',targetText:rec?targetLabel(rec.targetType,rec.targetId):'',receiver:rec?.receiver||'',ref:rec?.ref||'',invoiceDate:rec?.invoiceDate||'',
-    vatRate:rec?(rec.vatRate??0):dv,paymentMethod:rec?.paymentMethod||'',deliveryAddress:rec?(rec.deliveryAddress||''):'',note:rec?.note||'',
+    vatRate:rec?(rec.vatRate??0):dv,paymentMethod:rec?(rec.paymentMethod||'TM/CK'):'TM/CK',deliveryAddress:rec?(rec.deliveryAddress||''):'',note:rec?.note||'',
     lines:rec?rec.lines.map(l=>({itemId:l.itemId,itemText:'',qty:l.qty,price:l.price||0,serialsText:'',warranty:'',assetIds:[...(l.assetIds||[])]})):[newLine()]}}
   modal(`${id?'Sửa':'Tạo'} ${kind==='receipt'?'phiếu nhập kho':'phiếu xuất kho'}${rec?' – '+rec.code:''}`,slipBody(),{size:'wide',footer:cancelBtn+'<button class="btn primary" data-act="slip-save">💾 Lưu phiếu</button>'});
   renderLines();
@@ -41,9 +41,8 @@ function slipBody(){
   const modes=`<div class="f full"><span>Ghi nhận vào kho</span><div class="modes">${desc.map(([v,l,d])=>`<label class="mode ${S.mode===v?'on':''}"><span><input type="radio" name="whmode" value="${v}" data-slip="mode" ${S.mode===v?'checked':''}> <b>${l}</b></span><small>${d}</small></label>`).join('')}</div></div>`;
   const inv=`<label class="f"><span>Số hóa đơn (nếu có)</span><input class="in" data-slip="ref" value="${esc(S.ref)}" placeholder="VD: 0001234"></label><label class="f"><span>Ngày hóa đơn</span><input class="in" type="date" data-slip="invoiceDate" value="${esc(S.invoiceDate)}"></label>
     <label class="f"><span>Thuế suất GTGT (%)</span><input class="in" type="text" inputmode="decimal" data-num="money" data-slip="vatRate" value="${fmtPrice(S.vatRate||0)}" placeholder="0"></label>
-    <label class="f"><span>Hình thức thanh toán</span><input class="in" list="dl-pay" data-slip="paymentMethod" value="${esc(S.paymentMethod)}" placeholder="Tiền mặt / Chuyển khoản"></label>
-    <label class="f full"><span>Địa chỉ giao hàng (in trên phiếu)</span><input class="in" data-slip="deliveryAddress" value="${esc(S.deliveryAddress)}" placeholder="${isR?'Mặc định lấy địa chỉ công ty':'Tự lấy theo địa chỉ khách hàng/dự án khi chọn'}"></label>
-    <datalist id="dl-pay"><option value="Tiền mặt"><option value="Chuyển khoản"><option value="TM/CK"></datalist>`;
+    <label class="f"><span>Hình thức thanh toán</span><select class="in" data-slip="paymentMethod"><option value="TM/CK" ${S.paymentMethod==='TM/CK'?'selected':''}>TM/CK</option><option value="Tiền mặt" ${S.paymentMethod==='Tiền mặt'?'selected':''}>Tiền mặt</option><option value="Chuyển khoản" ${S.paymentMethod==='Chuyển khoản'?'selected':''}>Chuyển khoản</option></select></label>
+    <label class="f full"><span>Địa chỉ giao hàng (in trên phiếu)</span><input class="in" data-slip="deliveryAddress" value="${esc(S.deliveryAddress)}" placeholder="${isR?'Mặc định lấy địa chỉ công ty':'Tự lấy theo địa chỉ khách hàng/dự án khi chọn'}"></label>`;
   const date=`<label class="f"><span>Ngày ${isR?'nhập':'xuất'}</span><input class="in" type="date" data-slip="date" value="${S.date}"></label>`;
   const head=isR
     ?`${date}<label class="f"><span>Nhà cung cấp</span><select class="in" data-slip="supplierId"><option value="">— Không có / tồn đầu kỳ —</option>${db.suppliers.map(s=>`<option value="${s.id}" ${s.id===S.supplierId?'selected':''}>${esc(s.name)}</option>`).join('')}</select></label>${inv}`
@@ -64,7 +63,8 @@ function renderLines(){
     const del=`<button type="button" class="btn sm danger" data-act="ln-del" data-i="${i}" aria-label="Xoá dòng">✕</button>`;
     const itmWrap=`<div class="itm-wrap">${item}${!isR&&it?`<div class="stk ${l.qty>avail?'bad':''}">Tồn ${stkTxt}</div>`:''}</div>`;
     const priceIn=`<input class="in" type="text" inputmode="decimal" data-num="money" value="${fmtPrice(l.price)}" data-l="${i}:price" placeholder="Đơn giá (VND)" title="Lấy 2 số lẻ. Có thể gõ phép tính, ví dụ 500000/1.08" aria-label="Đơn giá (VND)">`;
-    const main=`<div class="ln-main isr">${itmWrap}<span class="unit">${esc(it?.unit||'')}</span>${qty}${priceIn}<span class="amt">${fmtMoney(amt(l.qty,l.price))} VND</span>${del}</div>`;
+    const amtIn=`<input class="in amt" type="text" inputmode="decimal" data-num="money" value="${fmtPrice(amt(l.qty,l.price))}" data-l="${i}:amt" placeholder="Thành tiền (VND)" title="Gõ thành tiền để tự chia ngược ra đơn giá" aria-label="Thành tiền (VND)">`;
+    const main=`<div class="ln-main isr">${itmWrap}<span class="unit">${esc(it?.unit||'')}</span>${qty}${priceIn}${amtIn}${del}</div>`;
     let extra='';
     if(it&&isIT&&isR&&sInt())extra=`<div class="ser"><textarea class="in" placeholder="Serial / Service Tag – mỗi dòng một thiết bị (bỏ trống nếu không quản lý theo Serial)" data-l="${i}:serialsText">${esc(l.serialsText)}</textarea><label class="f"><span>Bảo hành (tháng)</span><input class="in" type="number" min="0" value="${esc(l.warranty)}" data-l="${i}:warranty"></label></div>`;
     if(it&&isIT&&!isR&&sInt()){
@@ -85,7 +85,8 @@ function syncLineUI(i){
   if(row){
     const tracked=S.kind==='receipt'?serialsOf(l).length>0:l.assetIds.length>0,q=$('[data-l$=":qty"]',row);
     if(q){if(tracked||document.activeElement!==q)q.value=l.qty;q.readOnly=tracked}
-    const a=$('.amt',row);if(a)a.textContent=fmtMoney(amt(l.qty,l.price))+' VND';
+    const pIn=$('[data-l$=":price"]',row);if(pIn&&document.activeElement!==pIn)pIn.value=fmtPrice(l.price);
+    const aIn=$('[data-l$=":amt"]',row);if(aIn&&document.activeElement!==aIn)aIn.value=fmtPrice(amt(l.qty,l.price));
     const sm=$('.asum',row);if(sm)sm.textContent=`đã chọn ${l.assetIds.length}`;
     const st=$('.stk',row);if(st)st.classList.toggle('bad',l.qty>availOf(l));
   }
@@ -95,7 +96,10 @@ function pickItem(i,it){const l=S.lines[i];l.itemId=it.id;l.itemText='';l.assetI
 function lineInput(el){
   const [is,k]=el.dataset.l.split(':'),i=+is,l=S.lines[i];if(!l)return;
   if(k==='itemText'){l.itemText=el.value;const it=itemByText(el.value,true);if(it&&it.id!==l.itemId)pickItem(i,it);return}
-  if(k==='qty')l[k]=num(el.value);else if(k==='price')l[k]=r2(num(el.value));else l[k]=el.value;
+  if(k==='qty')l.qty=num(el.value);
+  else if(k==='price')l.price=r2(num(el.value));
+  else if(k==='amt'){const av=r2(num(el.value));l.price=(+l.qty>0)?r2(av/(+l.qty)):0}
+  else l[k]=el.value;
   if(k==='serialsText'){const n=serialsOf(l).length;if(n>0)l.qty=n}
   syncLineUI(i);
 }
