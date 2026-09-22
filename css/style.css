@@ -136,6 +136,8 @@ table.t td small{display:block;color:var(--muted);font-size:12px}
 .ln-head.isr{grid-template-columns:minmax(200px,1fr) 48px 92px 130px 140px 34px}
 .ln-head .r{text-align:right}
 .ln .unit{color:var(--muted);font-size:12.5px}
+.itm-wrap{min-width:0}
+.itm-wrap .stk{margin-top:3px;white-space:normal}
 .ln .stk{font-size:12.5px;color:var(--muted);white-space:nowrap}
 .ln .stk.bad{color:var(--bad);font-weight:600}
 .ln .amt{text-align:right;font-weight:600}
@@ -158,17 +160,26 @@ table.t td small{display:block;color:var(--muted);font-size:12px}
 
 /* ---------- slip (phiếu) ---------- */
 .slip{background:#fff;color:#111;font-family:'Be Vietnam Pro',Arial,sans-serif;font-size:12px;line-height:1.45;padding:26px 34px;width:100%;max-width:794px;margin:0 auto;border:1px solid var(--line)}
-.slip .sh{display:flex;justify-content:space-between;gap:20px}
-.slip .co,.rpt-doc .co{display:flex;gap:12px;align-items:center}
+.slip .sh{display:flex;justify-content:space-between;align-items:flex-start;gap:20px}
+.slip .co{flex:1;display:flex;flex-direction:column;gap:2px}
+.slip .co div i{color:#444;font-style:italic}
+.slip .co b{font-size:13px}
+.rpt-doc .co{display:flex;gap:12px;align-items:center}
 .slip-logo{height:52px;width:auto}
-.slip .co b{font-size:13px;text-transform:uppercase}
+.slip-logo-corner{height:74px;width:auto;flex:none;object-fit:contain}
 .slip h2{text-align:center;font-size:20px;margin:14px 0 2px;letter-spacing:.3px}
 .slip .sub{text-align:center;color:#444;margin-bottom:12px}
 .slip .mt{display:grid;grid-template-columns:1fr 1fr;gap:3px 24px;margin-bottom:8px}
 .slip table{width:100%;border-collapse:collapse;margin-top:6px}
 .slip th,.slip td{border:1px solid #333;padding:5px 6px;vertical-align:top}
 .slip th{background:#f0f0f0;text-align:center}
+.slip th i{font-weight:400;font-style:italic;font-size:10.5px}
 .slip .sn{font-size:10.5px;color:#444;margin-top:2px}
+.slip .totals-tbl{border:0;margin-top:2px}
+.slip .totals-tbl td{border:0;padding:2px 4px}
+.slip .totals-tbl tr.first td{border-top:1px solid #333;padding-top:6px}
+.slip .totals-tbl td.r{text-align:right}
+.slip .itw{margin:8px 0 0}
 .slip .sign{display:grid;grid-template-columns:repeat(4,1fr);text-align:center;margin-top:20px;gap:8px}
 .slip .sign div{min-height:92px}
 .slip .sign small{color:#555}
