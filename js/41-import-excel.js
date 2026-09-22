@@ -8,7 +8,7 @@
    (giữ nguyên id nên các phiếu, thiết bị đã liên kết không bị mất liên kết).
    ===================================================================== */
 const SPECS={
-  ncc:{title:'Upload file nhà cung cấp',need:{name:'Tên NCC'},fields:{code:['ma ncc','ma nha cung cap','ma'],name:['ten ncc','ten nha cung cap','ten'],address:['dia chi'],phone:['dien thoai','sdt','so dien thoai'],email:['email'],contact:['nguoi lien he','lien he']},apply:applySuppliers},
+  ncc:{title:'Upload file nhà cung cấp',need:{name:'Tên NCC'},fields:{code:['ma ncc','ma nha cung cap','ma'],name:['ten ncc','ten nha cung cap','ten'],taxId:['mst','ma so thue'],bankAccount:['so tai khoan','stk','tai khoan'],address:['dia chi'],phone:['dien thoai','sdt','so dien thoai'],email:['email'],contact:['nguoi lien he','lien he']},apply:applySuppliers},
   kh:{title:'Upload file khách hàng',need:{name:'Tên KH'},fields:{code:['ma kh','ma khach hang','ma'],name:['ten kh','ten khach hang','ten'],tax:['mst','ma so thue'],address:['dia chi'],phone:['dien thoai','sdt'],contact:['nguoi lien he','lien he']},apply:applyCustomers},
   stock:{title:'Upload file số lượng tồn kho',need:{sku:'SKU',name:'Tên hàng'},warehouse:true,fields:{sku:['sku','ma hang','ma'],name:['ten hang','ten hang hoa','ten'],cat:['danh muc','nhom','loai'],unit:['dvt','don vi','don vi tinh'],qty:['ton kho','so luong','ton','sl'],price:['don gia','gia']},apply:applyStock}
 };
@@ -83,9 +83,9 @@ function applySuppliers(rows){
     if(!name){if(cell(r.code)||cell(r.address))rep.notes.push(`Dòng ${row}: thiếu tên NCC → bỏ qua`);return}
     const nn=norm(name),code=dedupCode(cell(r.code),nn,seen,row,rep),key=norm(code);
     const ex=(key&&db.suppliers.find(s=>norm(s.code)===key))||db.suppliers.find(s=>norm(s.name)===nn);
-    const data={code,name,address:cell(r.address),phone:cell(r.phone),email:cell(r.email),contact:cell(r.contact)};
+    const data={code,name,taxId:cell(r.taxId),bankAccount:cell(r.bankAccount),address:cell(r.address),phone:cell(r.phone),email:cell(r.email),contact:cell(r.contact)};
     if(ex){assignFields(ex,data)?rep.upd++:rep.same++}
-    else{db.suppliers.push({id:uid('s'),code:'',contact:'',phone:'',email:'',address:'',...data});rep.add++}
+    else{db.suppliers.push({id:uid('s'),code:'',taxId:'',bankAccount:'',contact:'',phone:'',email:'',address:'',...data});rep.add++}
   });
   return rep;
 }

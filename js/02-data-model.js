@@ -7,7 +7,7 @@ const ROLES={admin:'Quản trị viên',keeper:'Thủ kho',viewer:'Chỉ xem'};
 function defaultDB(){return{
   version:1,
   seq:{PN:0,PX:0,KK:0,TS:0,HH:0},
-  company:{name:'TTD Computer',address:'',phone:''},
+  company:{name:'TTD Computer',taxId:'',bankAccount:'',defaultVatRate:0,address:'',phone:''},
   users:[{id:'u_admin',username:'admin',name:'Quản trị',role:'admin',pass:pw('admin123'),active:true}],
   warehouses:WH_DEF(),
   categories:[
@@ -51,7 +51,13 @@ function migrateIntQty(){
   db.items.forEach(px);db.receipts.forEach(r=>r.lines.forEach(px));db.issues.forEach(r=>r.lines.forEach(px));db.stocktakes.forEach(s=>s.lines.forEach(l=>{fix(l,'actual');fix(l,'system')}));db.items.forEach(i=>fix(i,'minStock'));
   return ch;
 }
-function migrateCompany(){if(db.company&&db.company.name==='Taikisha Vietnam Engineering Inc. (TVE-HCM)'){db.company.name='TTD Computer';return true}return false}
+function migrateCompany(){
+  let ch=false;
+  if(db.company&&db.company.name==='Taikisha Vietnam Engineering Inc. (TVE-HCM)'){db.company.name='TTD Computer';ch=true}
+  if(db.company){for(const k of['taxId','bankAccount'])if(db.company[k]===undefined){db.company[k]='';ch=true}
+    if(db.company.defaultVatRate===undefined){db.company.defaultVatRate=0;ch=true}}
+  return ch;
+}
 function migrateAll(){let ch=migrateWarehouses();if(migrateIntQty())ch=true;if(migrateCompany())ch=true;return ch}
 function migrateWarehouses(){
   if(!db)return false;

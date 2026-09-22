@@ -39,7 +39,13 @@ function cbPick(i){
   const s=cbState;if(!s)return;const o=s.list[i];if(!o)return;const el=s.el;
   el.value=o.label;cbClose();
   if(s.kind==='item'){const it=itemOf(o.id);if(it&&S)pickItem(+el.dataset.idx,it)}
-  else if(S){S.targetText=o.label;S.targetId=o.id}
+  else if(S){
+    S.targetText=o.label;S.targetId=o.id;
+    if(s.kind==='project'&&!S.deliveryAddress){
+      const p=by(db.projects,o.id);
+      if(p&&p.address){S.deliveryAddress=p.address;const da=document.querySelector('[data-slip=deliveryAddress]');if(da)da.value=p.address}
+    }
+  }
 }
 document.addEventListener('focusin',e=>{const el=e.target;if(el.dataset&&el.dataset.cb&&!(cbState&&cbState.el===el))cbOpen(el)});
 document.addEventListener('click',e=>{const el=e.target;if(el.dataset&&el.dataset.cb&&!cbState)cbOpen(el)});
