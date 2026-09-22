@@ -54,17 +54,20 @@ const availIn=(it,w,m)=>{let a=(m||stockMap())[it.id]?.[w]||0;if(S.id&&S.kind===
 function availOf(l){const it=itemOf(l.itemId);if(!it)return 0;const m=stockMap();return Math.min(...sWhs().map(w=>availIn(it,w,m)))}
 function renderLines(){
   const isR=S.kind==='receipt',m=stockMap();
-  const head='<div class="ln-head isr"><span>Hàng hóa</span><span>ĐVT</span><span>Số lượng</span><span>Đơn giá (VND)</span><span class="r">Thành tiền (VND)</span><span></span></div>';
+  const head=isR
+    ?'<div class="ln-head isr"><span>Hàng hóa</span><span>ĐVT</span><span>Số lượng</span><span>Đơn giá (VND)</span><span class="r">Thành tiền (VND)</span><span></span></div>'
+    :'<div class="ln-head isx"><span>Hàng hóa</span><span>ĐVT</span><span>Tồn kho</span><span>Số lượng</span><span>Đơn giá (VND)</span><span class="r">Thành tiền (VND)</span><span></span></div>';
   $('#lines').innerHTML=head+S.lines.map((l,i)=>{
     const it=itemOf(l.itemId),isIT=!!(it&&catOf(it.categoryId)?.isIT),tracked=isR?serialsOf(l).length>0:l.assetIds.length>0;
-    let avail=0,stkTxt='';if(it&&!isR){const per=sWhs().map(w=>[w,availIn(it,w,m)]);avail=Math.min(...per.map(x=>x[1]));stkTxt=per.map(([w,a])=>`${w===W_INV?'Hóa đơn':'Nội bộ'}: ${fmtNum(a)}`).join(' · ')}
+    let avail=0,stkTxt='';if(it&&!isR){const per=sWhs().map(w=>[w,availIn(it,w,m)]);avail=Math.min(...per.map(x=>x[1]));stkTxt=per.map(([w,a])=>`${w===W_INV?'HĐ':'NB'}: ${fmtNum(a)}`).join(' · ')}
     const item=`<input class="in itm" data-cb="item" data-idx="${i}" autocomplete="off" placeholder="Bấm để chọn hoặc gõ mã / tên hàng…" value="${esc(it?itemLabel(it):l.itemText||'')}" data-l="${i}:itemText" aria-label="Hàng hóa">`;
     const qty=`<input class="in" type="text" inputmode="numeric" data-num="int" value="${l.qty}" data-l="${i}:qty" ${tracked?'readonly':''} aria-label="Số lượng">`;
     const del=`<button type="button" class="btn sm danger" data-act="ln-del" data-i="${i}" aria-label="Xoá dòng">✕</button>`;
-    const itmWrap=`<div class="itm-wrap">${item}${!isR&&it?`<div class="stk ${l.qty>avail?'bad':''}">Tồn ${stkTxt}</div>`:''}</div>`;
     const priceIn=`<input class="in" type="text" inputmode="decimal" data-num="money" value="${fmtPrice(l.price)}" data-l="${i}:price" placeholder="Đơn giá (VND)" title="Lấy 2 số lẻ. Có thể gõ phép tính, ví dụ 500000/1.08" aria-label="Đơn giá (VND)">`;
     const amtIn=`<input class="in amt" type="text" inputmode="decimal" data-num="money" value="${fmtPrice(amt(l.qty,l.price))}" data-l="${i}:amt" placeholder="Thành tiền (VND)" title="Gõ thành tiền để tự chia ngược ra đơn giá" aria-label="Thành tiền (VND)">`;
-    const main=`<div class="ln-main isr">${itmWrap}<span class="unit">${esc(it?.unit||'')}</span>${qty}${priceIn}${amtIn}${del}</div>`;
+    const main=isR
+      ?`<div class="ln-main isr">${item}<span class="unit">${esc(it?.unit||'')}</span>${qty}${priceIn}${amtIn}${del}</div>`
+      :`<div class="ln-main isx">${item}<span class="unit">${esc(it?.unit||'')}</span>${it?`<span class="stk ${l.qty>avail?'bad':''}">${stkTxt}</span>`:'<span></span>'}${qty}${priceIn}${amtIn}${del}</div>`;
     let extra='';
     if(it&&isIT&&isR&&sInt())extra=`<div class="ser"><textarea class="in" placeholder="Serial / Service Tag – mỗi dòng một thiết bị (bỏ trống nếu không quản lý theo Serial)" data-l="${i}:serialsText">${esc(l.serialsText)}</textarea><label class="f"><span>Bảo hành (tháng)</span><input class="in" type="number" min="0" value="${esc(l.warranty)}" data-l="${i}:warranty"></label></div>`;
     if(it&&isIT&&!isR&&sInt()){

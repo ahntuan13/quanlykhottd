@@ -84,12 +84,12 @@ PAGES['wh/stock']={t:'Tồn kho',
     const whCols=view==='int'?[nc('Kho nội bộ (thực tế)',pi)]:view==='inv'?[nc('Kho hóa đơn',vi)]:[nc('Kho nội bộ (thực tế)',pi),nc('Kho hóa đơn',vi)];
     const cols=[...(w?[{h:'<input type="checkbox" data-act="xf-pickall" aria-label="Chọn tất cả">',noexp:1,f:r=>`<input type="checkbox" class="xfpick" value="${r.id}">`}]:[]),{h:'Mã hàng',f:r=>`<b>${esc(r.sku)}</b>`,x:r=>r.sku},{h:'Tên hàng hóa',f:r=>esc(r.name),x:r=>r.name},{h:'Danh mục',f:r=>esc(nm(db.categories,r.categoryId))},{h:'ĐVT',f:r=>esc(r.unit)},
       ...whCols,
-      nc('Tối thiểu',r=>r.minStock||0),nc('Giá trị thực tế (VND)',r=>amt(pi(r),r.price),fmtMoney),
+      nc('Tối thiểu',r=>r.minStock||0),nc('Đơn giá (VND)',r=>r.price||0,fmtMoney),nc('Giá trị thực tế (VND)',r=>amt(pi(r),r.price),fmtMoney),
       {h:'Trạng thái',f:r=>badge(...itemStatus(r,pi(r))),x:r=>itemStatus(r,pi(r))[1]},
       actCol(r=>w&&(pi(r)>0||vi(r)>0)?`<button class="btn sm" data-act="xfer-one" data-id="${r.id}" title="Chuyển sang kho khác">⇄ Chuyển kho</button>`:'')];
     const tv=rows.reduce((a,r)=>a+amt(pi(r),r.price),0),lead=(w?1:0)+4;
     const whFoot=view==='int'?`<td class="num">${fmtNum(rows.reduce((a,r)=>a+pi(r),0))}</td>`:view==='inv'?`<td class="num">${fmtNum(rows.reduce((a,r)=>a+vi(r),0))}</td>`:`<td class="num">${fmtNum(rows.reduce((a,r)=>a+pi(r),0))}</td><td class="num">${fmtNum(rows.reduce((a,r)=>a+vi(r),0))}</td>`;
-    return table(cols,rows,{foot:`<tr><td colspan="${lead}">Tổng</td>${whFoot}<td></td><td class="num">${fmtMoney(tv)}</td><td colspan="2"></td></tr>`});
+    return table(cols,rows,{foot:`<tr><td colspan="${lead}">Tổng</td>${whFoot}<td></td><td></td><td class="num">${fmtMoney(tv)}</td><td colspan="2"></td></tr>`});
   }};
 
 /* ---- CHUYỂN KHO: sửa trường hợp nhập nhầm kho (Kho nội bộ ⇄ Kho hóa đơn) ----

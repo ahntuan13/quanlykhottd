@@ -36,6 +36,7 @@ function slipHTML(kind,r){
     :['Người lập phiếu','Người nhận hàng','Thủ kho','Trưởng bộ phận / Duyệt'];
   return `<div class="slip">
     <div class="sh">
+      ${typeof LOGO_DATA!=='undefined'?`<img class="slip-logo-corner" src="${LOGO_DATA}" alt="Logo">`:''}
       <div class="co">
         <div><i>Tên đơn vị (Company's name):</i> <b>${esc(head.name||'')}</b></div>
         ${head.taxId?`<div><i>Mã số thuế (Tax code):</i> ${esc(head.taxId)}</div>`:''}
@@ -43,7 +44,6 @@ function slipHTML(kind,r){
         <div><i>Địa chỉ giao hàng (Delivery address):</i> ${esc(slipDelivery(kind,r))}</div>
         <div><i>Hình thức thanh toán (Payment method):</i> ${esc(r.paymentMethod||'—')}&emsp;<i>Số tài khoản (Bank account):</i> ${esc(head.bank||'—')}</div>
       </div>
-      ${typeof LOGO_DATA!=='undefined'?`<img class="slip-logo-corner" src="${LOGO_DATA}" alt="Logo">`:''}
     </div>
     <h2>${isIn?'PHIẾU NHẬP KHO':'PHIẾU XUẤT KHO'}</h2>
     <div class="sub">${isIn?'Goods Receipt Note':'Goods Issue Note'}</div>
