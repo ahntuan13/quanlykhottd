@@ -31,7 +31,7 @@ function slipHTML(kind,r){
     return `<tr><td class="c">${i+1}</td><td>${esc(it.name)}${sn.length?`<div class="sn">S/N: ${esc(sn.join(', '))}</div>`:''}<div class="sn">${esc(it.sku)}</div>${whTag}</td><td class="c">${esc(it.unit)}</td><td class="r">${fmtNum(l.qty)}</td><td class="r">${fmtMoney(l.price)}</td><td class="r">${fmtMoney(am)}</td></tr>`;
   }).join('');
   const foot=`<tr><td colspan="3" class="r"><b>Cộng</b></td><td class="r"><b>${fmtNum(qtyT)}</b></td><td></td><td class="r"><b>${fmtMoney(total)}</b></td></tr>`;
-  const vat=r2(+r.vatRate||0),vatAmt=r2(total*vat/100),grand=vat>0?r2(total+vatAmt):total;
+  const vat=r2(+r.vatRate||0),vatAmt=r2(total*vat/100),grand=vat>0?Math.round((total+vatAmt)/1000)*1000:total;
   const sign=isIn
     ?['Người lập phiếu','Người giao hàng','Thủ kho','Kế toán / Duyệt']
     :['Người lập phiếu','Người nhận hàng','Thủ kho','Trưởng bộ phận / Duyệt'];

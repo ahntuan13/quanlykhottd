@@ -10,6 +10,7 @@ function cbPop(){let p=document.getElementById('cb-pop');if(!p){p=document.creat
 function cbOptions(kind){
   if(kind==='retail')return db.retail.map(c=>({id:c.id,label:c.name,sub:[c.dept,c.phone].filter(Boolean).join(' · '),key:norm(c.name+' '+(c.dept||''))}));
   if(kind==='project')return db.projects.map(p=>({id:p.id,label:`${p.code} – ${p.name}`,sub:[p.taxId?'MST '+p.taxId:'',p.address].filter(Boolean).join(' · '),key:norm(p.code+' '+p.name+' '+(p.taxId||''))}));
+  if(kind==='supplier')return db.suppliers.map(s=>({id:s.id,label:s.name,sub:[s.code,s.phone,s.address].filter(Boolean).join(' · '),key:norm((s.code||'')+' '+s.name)}));
   if(kind==='item'){const m=stockMap();return db.items.map(i=>({id:i.id,label:itemLabel(i),sub:`Tồn ${fmtNum(totalOf(m,i.id))} ${i.unit}`,key:norm(i.sku+' '+i.name)}))}
   return[];
 }
@@ -26,7 +27,7 @@ function cbFilter(){
 }
 function cbRender(){
   const s=cbState,p=cbPop();if(!s)return;
-  p.innerHTML=s.list.length?s.list.map((o,i)=>`<div class="cbo ${i===s.idx?'on':''}" data-cbi="${i}"><b>${esc(o.label)}</b>${o.sub?`<small>${esc(o.sub)}</small>`:''}</div>`).join(''):`<div class="cbe">Không có kết quả${s.kind==='retail'&&s.el.value.trim()?` – sẽ thêm “${esc(s.el.value.trim())}” làm khách lẻ mới khi lưu phiếu`:s.kind==='project'?'. Thêm mới ở Thông tin → Khách hàng/dự án':''}</div>`;
+  p.innerHTML=s.list.length?s.list.map((o,i)=>`<div class="cbo ${i===s.idx?'on':''}" data-cbi="${i}"><b>${esc(o.label)}</b>${o.sub?`<small>${esc(o.sub)}</small>`:''}</div>`).join(''):`<div class="cbe">Không có kết quả${s.kind==='retail'&&s.el.value.trim()?` – sẽ thêm “${esc(s.el.value.trim())}” làm khách lẻ mới khi lưu phiếu`:s.kind==='project'?'. Thêm mới ở Thông tin → Khách hàng/dự án':s.kind==='supplier'?'. Để trống nếu không có nhà cung cấp / tồn đầu kỳ, hoặc thêm mới ở Thông tin → Supplier':''}</div>`;
   const r=s.el.getBoundingClientRect(),below=window.innerHeight-r.bottom-10,up=below<170&&r.top>below;
   p.style.left=Math.max(6,Math.min(r.left,window.innerWidth-Math.max(r.width,320)-6))+'px';p.style.width=Math.max(r.width,320)+'px';
   if(up){p.style.top='auto';p.style.bottom=(window.innerHeight-r.top+2)+'px';p.style.maxHeight=Math.min(300,r.top-12)+'px'}
@@ -39,6 +40,7 @@ function cbPick(i){
   const s=cbState;if(!s)return;const o=s.list[i];if(!o)return;const el=s.el;
   el.value=o.label;cbClose();
   if(s.kind==='item'){const it=itemOf(o.id);if(it&&S)pickItem(+el.dataset.idx,it)}
+  else if(s.kind==='supplier'){if(S){S.supplierText=o.label;S.supplierId=o.id}}
   else if(S){
     S.targetText=o.label;S.targetId=o.id;
     if(s.kind==='project'&&!S.deliveryAddress){
@@ -71,4 +73,10 @@ function resolveProject(t){
   const n=norm(t);if(!n)return null;
   const x=db.projects.find(p=>norm(`${p.code} – ${p.name}`)===n||norm(p.code)===n);if(x)return x;
   const c=db.projects.filter(p=>norm(p.name)===n);return c.length===1?c[0]:null;
+}
+/* Tìm nhà cung cấp từ chữ đã gõ: mã hoặc tên (duy nhất) */
+function resolveSupplier(t){
+  const n=norm(t);if(!n)return null;
+  const x=db.suppliers.find(s=>s.code&&norm(s.code)===n);if(x)return x;
+  const c=db.suppliers.filter(s=>norm(s.name)===n);return c.length===1?c[0]:null;
 }

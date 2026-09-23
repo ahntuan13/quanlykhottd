@@ -18,7 +18,7 @@ function slipOpen(kind,id,preset){
   if(!db.items.length)return toast('Chưa có hàng hóa. Hãy thêm hàng hóa trước.','warn');
   const mode=rec&&kind==='receipt'?modeOf(slipWhs(rec)):'both';
   const dv=db.company.defaultVatRate||0;
-  if(kind==='receipt')S={kind,id:id||null,date:rec?.date||todayStr(),mode,supplierId:rec?.supplierId||'',ref:rec?.ref||'',invoiceDate:rec?.invoiceDate||'',
+  if(kind==='receipt')S={kind,id:id||null,date:rec?.date||todayStr(),mode,supplierId:rec?.supplierId||'',supplierText:rec&&rec.supplierId?nm(db.suppliers,rec.supplierId):'',ref:rec?.ref||'',invoiceDate:rec?.invoiceDate||'',
     vatRate:rec?(rec.vatRate??0):dv,paymentMethod:rec?(rec.paymentMethod||'TM/CK'):'TM/CK',deliveryAddress:rec?(rec.deliveryAddress||''):(db.company.address||''),note:rec?.note||'',
     lines:rec?rec.lines.map(l=>({itemId:l.itemId,itemText:'',qty:l.qty,price:l.price||0,serialsText:(l.serials||[]).join('\n'),warranty:l.warranty||'',assetIds:[]})):[newLine()]};
   else{const dw=preset==='retail'?'int':'both';
@@ -43,7 +43,7 @@ function slipBody(){
     <label class="f full"><span>Địa chỉ giao hàng (in trên phiếu)</span><input class="in" data-slip="deliveryAddress" value="${esc(S.deliveryAddress)}" placeholder="${isR?'Mặc định lấy địa chỉ công ty':'Tự lấy theo địa chỉ khách hàng/dự án khi chọn'}"></label>`;
   const date=`<label class="f"><span>Ngày ${isR?'nhập':'xuất'}</span><input class="in" type="date" data-slip="date" value="${S.date}"></label>`;
   const head=isR
-    ?`${date}<label class="f"><span>Nhà cung cấp</span><select class="in" data-slip="supplierId"><option value="">— Không có / tồn đầu kỳ —</option>${db.suppliers.map(s=>`<option value="${s.id}" ${s.id===S.supplierId?'selected':''}>${esc(s.name)}</option>`).join('')}</select></label>${inv}`
+    ?`${date}<label class="f"><span>Nhà cung cấp <small class="muted">– bấm để chọn hoặc gõ tên (để trống nếu không có / tồn đầu kỳ)</small></span><input class="in" data-cb="supplier" data-slip="supplierText" autocomplete="off" value="${esc(S.supplierText||'')}" placeholder="Gõ tên nhà cung cấp để tìm…"></label>${inv}`
     :`${date}<label class="f"><span>Đối tượng nhận</span><select class="in" data-slip="targetType"><option value="retail" ${S.targetType==='retail'?'selected':''}>Khách lẻ</option><option value="project" ${S.targetType==='project'?'selected':''}>Khách hàng / Dự án</option></select></label><div id="tgt" class="contents">${targetField()}</div><label class="f"><span>Người nhận hàng</span><input class="in" data-slip="receiver" value="${esc(S.receiver)}"></label>${inv}`;
   const note=isR?'':'<p class="note">Chọn <b>Kho nội bộ</b> hoặc <b>Kho hóa đơn</b> cho từng dòng hàng hóa bên dưới — mỗi dòng có thể quản lý theo kho khác nhau.</p>';
   return `<div class="fg3">${head}${modes}<label class="f full"><span>${isR?'Ghi chú':'Mục đích / Ghi chú'}</span><input class="in" data-slip="note" value="${esc(S.note)}"></label></div>${note}
@@ -82,7 +82,7 @@ function renderLines(){
 }
 function renderTotals(){
   const q=S.lines.reduce((a,l)=>a+(+l.qty||0),0),v=S.lines.reduce((a,l)=>a+amt(l.qty,l.price),0);
-  const vat=r2(numVN(S.vatRate)||0),grand=vat>0?r2(v+r2(v*vat/100)):v;
+  const vat=r2(numVN(S.vatRate)||0),vatAmt=r2(v*vat/100),grand=vat>0?Math.round((v+vatAmt)/1000)*1000:v;
   const t=$('#tot');if(t)t.innerHTML=`<span>Tổng số lượng: ${fmtNum(q)}</span><span>Tiền hàng: ${fmtMoney(v)} VND</span>${vat>0?`<span>Sau thuế (${fmtPrice(vat)}%): ${fmtMoney(grand)} VND</span>`:''}`;
 }
 function syncLineUI(i){
@@ -170,8 +170,10 @@ function collectLines(){
 }
 function saveReceipt(){
   if(!S.date)return toast('Chọn ngày nhập.','error');
+  const supText=(S.supplierText||'').trim();let supplierId='';
+  if(supText){const sup=resolveSupplier(supText);if(!sup)return toast('Không tìm thấy nhà cung cấp này trong danh mục. Hãy chọn từ danh sách gợi ý, để trống nếu không có nhà cung cấp, hoặc thêm mới ở Thông tin → Supplier.','error');supplierId=sup.id}
   const lines=collectLines();if(!lines)return;
-  const data={date:S.date,whs:sWhs(),supplierId:S.supplierId,ref:(S.ref||'').trim(),invoiceDate:S.invoiceDate||'',vatRate:r2(numVN(S.vatRate))||0,paymentMethod:(S.paymentMethod||'').trim(),deliveryAddress:(S.deliveryAddress||'').trim(),note:S.note,lines};
+  const data={date:S.date,whs:sWhs(),supplierId,ref:(S.ref||'').trim(),invoiceDate:S.invoiceDate||'',vatRate:r2(numVN(S.vatRate))||0,paymentMethod:(S.paymentMethod||'').trim(),deliveryAddress:(S.deliveryAddress||'').trim(),note:S.note,lines};
   if(transact(()=>{
     const r=S.id?by(db.receipts,S.id):null;
     if(r){Object.assign(r,data);delete r.warehouseId;syncReceiptAssets(r)}else _newReceipt(data);
