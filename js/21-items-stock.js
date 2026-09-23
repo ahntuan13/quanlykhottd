@@ -17,6 +17,7 @@ PAGES['wh/items']={t:'Danh sách hàng hóa',
       {h:'Danh mục',f:r=>esc(nm(db.categories,r.categoryId))},{h:'ĐVT',f:r=>esc(r.unit)},
       nc('Tồn',r=>totalOf(m,r.id)),nc('Tối thiểu',r=>r.minStock||0),nc('Đơn giá (VND)',r=>r.price||0,fmtMoney),
       {h:'Trạng thái',f:r=>badge(...itemStatus(r,invOf(m,r.id))),x:r=>itemStatus(r,invOf(m,r.id))[1]},
+      {h:'Kho bán gần nhất',f:r=>{const w=lastSaleWh(r.id);return w?badge(w.includes(W_INV)?'info':'ok',w.includes(W_INV)?'Kho hóa đơn':'Kho nội bộ'):'<span class="muted">Chưa bán</span>'},x:r=>{const w=lastSaleWh(r.id);return w?(w.includes(W_INV)?'Kho hóa đơn':'Kho nội bộ'):''}},
       actCol(r=>w?`<button class="btn sm" data-act="item-edit" data-id="${r.id}">Sửa</button> <button class="btn sm danger" data-act="item-del" data-id="${r.id}">Xoá</button>`:'')
     ],rows,{empty:'Chưa có hàng hóa. Bấm “Thêm hàng hóa” hoặc nhập từ Excel.'});
   }};

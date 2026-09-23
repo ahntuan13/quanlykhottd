@@ -41,6 +41,13 @@ const inWh=(r,w)=>slipWhs(r).includes(w);
 const whsLabel=r=>slipWhs(r).map(w=>whName(w)).join(' + ')||'—';
 const modeOf=whs=>whs.includes(W_INT)&&whs.includes(W_INV)?'both':whs.includes(W_INV)?'inv':'int';
 const modeWhs=m=>m==='both'?[W_INT,W_INV]:m==='inv'?[W_INV]:[W_INT];
+/* Phiếu XUẤT: mỗi DÒNG hàng hóa tự chọn quản lý theo Kho nội bộ hay Kho hóa đơn (không còn chọn 1 lần cho cả phiếu).
+   l.whs = ['w_int'] (Kho nội bộ – khách lẻ, không hóa đơn) hoặc ['w_int','w_inv'] (Kho hóa đơn – dự án/công ty, có hóa đơn).
+   r.whs ở phiếu xuất chỉ còn là TỔNG HỢP (hợp của mọi dòng) để hiển thị/lọc danh sách, không dùng để tính tồn kho.
+   Phiếu NHẬP vẫn chọn 1 lần cho cả phiếu (r.whs), không đổi. */
+const lineWhs=l=>Array.isArray(l.whs)&&l.whs.length?l.whs:[W_INT];
+const lineMode=l=>modeOf(lineWhs(l));
+const issueWhsUnion=r=>[...new Set(r.lines.flatMap(lineWhs))];
 /* Gộp mọi kho cũ về 2 kho hệ thống. Chạy an toàn nhiều lần (idempotent). Trả về true nếu có thay đổi. */
 /* Làm tròn mọi số lượng về số nguyên; đổi tên công ty mặc định cũ. Idempotent. */
 function migrateIntQty(){
@@ -58,7 +65,16 @@ function migrateCompany(){
     if(db.company.defaultVatRate===undefined){db.company.defaultVatRate=0;ch=true}}
   return ch;
 }
-function migrateAll(){let ch=migrateWarehouses();if(migrateIntQty())ch=true;if(migrateCompany())ch=true;return ch}
+function migrateAll(){let ch=migrateWarehouses();if(migrateIntQty())ch=true;if(migrateCompany())ch=true;if(migrateIssueLineWh())ch=true;return ch}
+/* Dữ liệu cũ (trước khi có chọn kho theo từng dòng ở phiếu xuất): sao chép whs của phiếu xuống từng dòng. Idempotent. */
+function migrateIssueLineWh(){
+  let ch=false;
+  db.issues.forEach(r=>{
+    const u=slipWhs(r);
+    r.lines.forEach(l=>{if(!Array.isArray(l.whs)||!l.whs.length){l.whs=u.length?[...u]:[W_INT];ch=true}});
+  });
+  return ch;
+}
 function migrateWarehouses(){
   if(!db)return false;
   const ids=db.warehouses.map(w=>w.id),ok2=[W_INT,W_INV];

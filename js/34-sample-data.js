@@ -20,7 +20,7 @@ function loadSample(){
   const ser=(p,off,n)=>Array.from({length:n},(_,k)=>`${p}${String(off+k+1).padStart(4,'0')}`);
   const pick=(iid,n)=>db.assets.filter(a=>a.itemId===iid&&a.status==='in_stock'&&a.warehouseId===W_INT).slice(0,n).map(a=>a.id);
   const R=(date,sup,mode,ref,lines)=>_newReceipt({date,supplierId:sup,whs:modeWhs(mode),ref,invoiceDate:ref?date:'',note:'',lines});
-  const X=(date,mode,tt,tid,receiver,ref,lines)=>_newIssue({date,whs:modeWhs(mode),targetType:tt,targetId:tid,receiver,ref,invoiceDate:ref?date:'',note:'',lines});
+  const X=(date,mode,tt,tid,receiver,ref,lines)=>_newIssue({date,whs:modeWhs(mode),targetType:tt,targetId:tid,receiver,ref,invoiceDate:ref?date:'',note:'',lines:lines.map(l=>({...l,whs:modeWhs(mode)}))});
   const L=(itemId,qty,extra={})=>({itemId,qty,price:itemOf(itemId).price,...extra});
   /* Nhập: có hóa đơn → cả 2 kho; mua không hóa đơn → chỉ Kho nội bộ */
   R(dAgo(110),'s1','both','HD-0001',[L('i1',5,{serials:ser('DL5440-',0,5),warranty:24}),L('i2',3,{serials:ser('TP-E14-',0,3),warranty:24}),L('i3',6,{serials:ser('P2422-',0,6),warranty:3}),L('i4',2),L('i5',2,{serials:ser('SW24-',0,2),warranty:4}),L('i6',3),L('i7',20),L('i8',15),L('i9',10)]);
@@ -33,7 +33,7 @@ function loadSample(){
   X(dAgo(12),'int','retail','rt2','Trần Thị B','',[L('i3',2,{assetIds:pick('i3',2)})]);
   X(dAgo(5),'both','project','p1','Anh Hùng (PM)','HĐ-1003',[L('i10',5),L('i11',3)]);
   X(dAgo(2),'int','retail','rt1','Nguyễn Văn A','',[L('i7',2),L('i8',2)]);
-  X(dAgo(1),'inv','project','p2','','HĐ-1004',[L('i7',3)]);
+  X(dAgo(1),'both','project','p2','','HĐ-1004',[L('i7',3)]);
   db.assets.forEach(a=>{if(a.itemId==='i1')a.spec='Core i7 / 16GB / 512GB SSD';if(a.itemId==='i2')a.spec='Ryzen 5 / 16GB / 512GB SSD';if(a.itemId==='i3')a.spec='24 inch FHD IPS'});
   const rp=db.assets.find(a=>a.itemId==='i3'&&a.status==='in_stock');if(rp){rp.status='repair';addHist(rp,'Sửa chữa','Màn hình bị sọc ngang, gửi bảo hành')}
   save();toast('Đã nạp dữ liệu mẫu');

@@ -13,7 +13,7 @@ function monthlyFlow(months,wh=W_INT){
   return months.map(mk=>{
     let iq=0,iv=0,oq=0,ov=0,ic=0,oc=0;
     db.receipts.forEach(r=>{if(r.date.slice(0,7)!==mk||!inWh(r,wh))return;ic++;r.lines.forEach(l=>{iq+=+l.qty||0;iv=r2(iv+amt(l.qty,l.price))})});
-    db.issues.forEach(r=>{if(r.date.slice(0,7)!==mk||!inWh(r,wh))return;oc++;r.lines.forEach(l=>{oq+=+l.qty||0;ov=r2(ov+amt(l.qty,l.price))})});
+    db.issues.forEach(r=>{if(r.date.slice(0,7)!==mk||!inWh(r,wh))return;oc++;r.lines.forEach(l=>{if(!lineWhs(l).includes(wh))return;oq+=+l.qty||0;ov=r2(ov+amt(l.qty,l.price))})});
     return{mk,iq,iv,oq,ov,ic,oc};
   });
 }

@@ -8,7 +8,7 @@ function stockMap(asOf,exclusive){
   const m={};const add=(i,w,q)=>{const o=(m[i]??={});o[w]=(o[w]||0)+q};
   const ok=d=>!asOf||(exclusive?d<asOf:d<=asOf);
   db.receipts.forEach(r=>{if(ok(r.date))slipWhs(r).forEach(w=>r.lines.forEach(l=>add(l.itemId,w,+l.qty||0)))});
-  db.issues.forEach(r=>{if(ok(r.date))slipWhs(r).forEach(w=>r.lines.forEach(l=>add(l.itemId,w,-(+l.qty||0))))});
+  db.issues.forEach(r=>{if(ok(r.date))r.lines.forEach(l=>lineWhs(l).forEach(w=>add(l.itemId,w,-(+l.qty||0))))});
   db.adjustments.forEach(a=>{if(ok(a.date))add(a.itemId,a.warehouseId,+a.qty||0)});
   db.stocktakes.forEach(s=>{if(ok(s.date))s.lines.forEach(l=>add(l.itemId,s.warehouseId,(+l.actual||0)-(+l.system||0)))});
   for(const i in m)for(const w in m[i])m[i][w]=Math.round(m[i][w]*1000)/1000;
@@ -20,10 +20,13 @@ const invOf=(m,id)=>m[id]?.[W_INV]||0;
 const qtyIn=(m,id,wh)=>m[id]?.[wh||W_INT]||0;
 function findNegative(){const m=stockMap();for(const i in m)for(const w in m[i])if(m[i][w]<-1e-9)return `${nm(db.items,i)} tại ${whName(w)} (${fmtNum(m[i][w])})${w===W_INV?'. Kho hóa đơn chưa đủ số lượng theo hóa đơn nhập: hãy nhập hóa đơn đầu vào trước, hoặc chọn “Chỉ Kho nội bộ” cho phiếu này':''}`;return null}
 function flow(kind,from,to,wh){
-  wh=wh||W_INT;const o={};
+  wh=wh||W_INT;const o={},perLine=kind==='issues';
   db[kind].forEach(r=>{
     if((from&&r.date<from)||(to&&r.date>to)||!inWh(r,wh))return;
-    r.lines.forEach(l=>{const x=(o[l.itemId]??={qty:0,val:0});const q=+l.qty||0;x.qty+=q;x.val=r2(x.val+amt(q,+l.price||itemOf(l.itemId)?.price||0))});
+    r.lines.forEach(l=>{
+      if(perLine&&!lineWhs(l).includes(wh))return;
+      const x=(o[l.itemId]??={qty:0,val:0});const q=+l.qty||0;x.qty+=q;x.val=r2(x.val+amt(q,+l.price||itemOf(l.itemId)?.price||0));
+    });
   });
   return o;
 }
@@ -42,6 +45,18 @@ function avgPriceMap(){
 const avgPriceOf=(map,id)=>{const o=map[id];return o&&o.q>0?r2(o.v/o.q):(itemOf(id)?.price||0)};
 /* Trạng thái hết hàng / sắp hết / còn hàng nay tính theo TỒN KHO HÓA ĐƠN (t = số lượng ở Kho hóa đơn), không theo Kho nội bộ. */
 function itemStatus(it,t){if(t<=0)return['bad','Hết hàng'];if(it.minStock>0&&t<=it.minStock)return['warn','Sắp hết'];return['ok','Còn hàng']}
+/* Kho quản lý của lần bán gần nhất một mã hàng — để Danh sách hàng hóa ghi nhận lại mặt hàng đó đang bán theo kho nào. */
+function lastSaleWh(itemId){
+  let best=null;
+  db.issues.forEach(r=>{
+    r.lines.forEach(l=>{
+      if(l.itemId!==itemId)return;
+      const key=r.date+'_'+String(r.createdAt||0).padStart(20,'0');
+      if(!best||key>best.key)best={key,whs:lineWhs(l)};
+    });
+  });
+  return best?best.whs:null;
+}
 function alertsData(){
   const m=stockMap(),moved=new Set();db.receipts.forEach(r=>r.lines.forEach(l=>moved.add(l.itemId)));
   const low=[],out=[];
@@ -103,7 +118,7 @@ function _newReceipt(o){const r={id:uid('r'),code:nextCode('PN'),createdBy:sessi
 
 /* Phiếu xuất → gán/thu hồi tài sản */
 function applyIssueAssets(r){
-  if(r.lines.some(l=>(l.assetIds||[]).length)&&!inWh(r,W_INT))throw new Error('Chọn thiết bị theo Serial chỉ áp dụng khi phiếu ghi nhận vào Kho nội bộ (hàng thực tế).');
+  if(r.lines.some(l=>(l.assetIds||[]).length&&!lineWhs(l).includes(W_INT)))throw new Error('Chọn thiết bị theo Serial chỉ áp dụng cho dòng ghi nhận có Kho nội bộ (hàng thực tế).');
   const seen=new Set();
   r.lines.forEach(l=>(l.assetIds||[]).forEach(id=>{
     const a=by(db.assets,id);if(!a)throw new Error('Thiết bị đã chọn không còn tồn tại');

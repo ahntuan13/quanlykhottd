@@ -5,7 +5,7 @@
 /* =====================================================================
    FORM PHIẾU NHẬP / XUẤT
    ===================================================================== */
-const newLine=()=>({itemId:'',itemText:'',qty:1,price:0,serialsText:'',warranty:'',assetIds:[]});
+const newLine=(whmode)=>({itemId:'',itemText:'',qty:1,price:0,serialsText:'',warranty:'',assetIds:[],whmode:whmode||'int',origWhs:[],origQty:0});
 const serialsOf=l=>(l.serialsText||'').split(/\n|,|;/).map(s=>s.trim()).filter(Boolean);
 function itemByText(t,exact){
   t=(t||'').trim();if(!t)return null;
@@ -16,15 +16,15 @@ function itemByText(t,exact){
 function slipOpen(kind,id,preset){
   const rec=id?(kind==='receipt'?by(db.receipts,id):by(db.issues,id)):null;
   if(!db.items.length)return toast('Chưa có hàng hóa. Hãy thêm hàng hóa trước.','warn');
-  const mode=rec?modeOf(slipWhs(rec)):(kind==='issue'&&preset==='retail'?'int':'both');
+  const mode=rec&&kind==='receipt'?modeOf(slipWhs(rec)):'both';
   const dv=db.company.defaultVatRate||0;
   if(kind==='receipt')S={kind,id:id||null,date:rec?.date||todayStr(),mode,supplierId:rec?.supplierId||'',ref:rec?.ref||'',invoiceDate:rec?.invoiceDate||'',
     vatRate:rec?(rec.vatRate??0):dv,paymentMethod:rec?(rec.paymentMethod||'TM/CK'):'TM/CK',deliveryAddress:rec?(rec.deliveryAddress||''):(db.company.address||''),note:rec?.note||'',
     lines:rec?rec.lines.map(l=>({itemId:l.itemId,itemText:'',qty:l.qty,price:l.price||0,serialsText:(l.serials||[]).join('\n'),warranty:l.warranty||'',assetIds:[]})):[newLine()]};
-  else{const orig={};if(rec)rec.lines.forEach(l=>{orig[l.itemId]=(orig[l.itemId]||0)+(+l.qty||0)});
-    S={kind,id:id||null,date:rec?.date||todayStr(),mode,origWhs:rec?slipWhs(rec):[],orig,targetType:rec?.targetType||preset||'retail',targetId:rec?.targetId||'',targetText:rec?targetLabel(rec.targetType,rec.targetId):'',receiver:rec?.receiver||'',ref:rec?.ref||'',invoiceDate:rec?.invoiceDate||'',
+  else{const dw=preset==='retail'?'int':'both';
+    S={kind,id:id||null,date:rec?.date||todayStr(),targetType:rec?.targetType||preset||'retail',targetId:rec?.targetId||'',targetText:rec?targetLabel(rec.targetType,rec.targetId):'',receiver:rec?.receiver||'',ref:rec?.ref||'',invoiceDate:rec?.invoiceDate||'',
     vatRate:rec?(rec.vatRate??0):dv,paymentMethod:rec?(rec.paymentMethod||'TM/CK'):'TM/CK',deliveryAddress:rec?(rec.deliveryAddress||''):'',note:rec?.note||'',
-    lines:rec?rec.lines.map(l=>({itemId:l.itemId,itemText:'',qty:l.qty,price:l.price||0,serialsText:'',warranty:'',assetIds:[...(l.assetIds||[])]})):[newLine()]}}
+    lines:rec?rec.lines.map(l=>({itemId:l.itemId,itemText:'',qty:l.qty,price:l.price||0,serialsText:'',warranty:'',assetIds:[...(l.assetIds||[])],whmode:lineMode(l),origWhs:[...lineWhs(l)],origQty:+l.qty||0})):[newLine(dw)]}}
   modal(`${id?'Sửa':'Tạo'} ${kind==='receipt'?'phiếu nhập kho':'phiếu xuất kho'}${rec?' – '+rec.code:''}`,slipBody(),{size:'wide',footer:cancelBtn+'<button class="btn primary" data-act="slip-save">💾 Lưu phiếu</button>'});
   renderLines();
 }
@@ -35,10 +35,8 @@ function targetField(){
 }
 function slipBody(){
   const isR=S.kind==='receipt';
-  const desc=isR
-    ?[['both','Cả hai kho','Hàng có hóa đơn đầu vào: tăng cả tồn hóa đơn và tồn thực tế'],['int','Chỉ Kho nội bộ','Hàng nhập thực tế, không có hóa đơn'],['inv','Chỉ Kho hóa đơn','Chỉ ghi nhận hóa đơn đầu vào, hàng chưa về / không nhập kho thực tế']]
-    :[['both','Cả hai kho','Xuất hàng kèm hóa đơn đầu ra: giảm cả tồn hóa đơn và tồn thực tế'],['int','Chỉ Kho nội bộ','Xuất hàng thực tế, không xuất hóa đơn'],['inv','Chỉ Kho hóa đơn','Chỉ xuất hóa đơn, không đổi tồn hàng thực tế']];
-  const modes=`<div class="f full"><span>Ghi nhận vào kho</span><div class="modes">${desc.map(([v,l,d])=>`<label class="mode ${S.mode===v?'on':''}"><span><input type="radio" name="whmode" value="${v}" data-slip="mode" ${S.mode===v?'checked':''}> <b>${l}</b></span><small>${d}</small></label>`).join('')}</div></div>`;
+  const desc=[['both','Cả hai kho','Hàng có hóa đơn đầu vào: tăng cả tồn hóa đơn và tồn thực tế'],['int','Chỉ Kho nội bộ','Hàng nhập thực tế, không có hóa đơn'],['inv','Chỉ Kho hóa đơn','Chỉ ghi nhận hóa đơn đầu vào, hàng chưa về / không nhập kho thực tế']];
+  const modes=isR?`<div class="f full"><span>Ghi nhận vào kho</span><div class="modes">${desc.map(([v,l,d])=>`<label class="mode ${S.mode===v?'on':''}"><span><input type="radio" name="whmode" value="${v}" data-slip="mode" ${S.mode===v?'checked':''}> <b>${l}</b></span><small>${d}</small></label>`).join('')}</div></div>`:'';
   const inv=`<label class="f"><span>Số hóa đơn (nếu có)</span><input class="in" data-slip="ref" value="${esc(S.ref)}" placeholder="VD: 0001234"></label><label class="f"><span>Ngày hóa đơn</span><input class="in" type="date" data-slip="invoiceDate" value="${esc(S.invoiceDate)}"></label>
     <label class="f"><span>Thuế suất GTGT (%)</span><input class="in" type="text" inputmode="decimal" data-num="money" data-slip="vatRate" value="${fmtPrice(S.vatRate||0)}" placeholder="0"></label>
     <label class="f"><span>Hình thức thanh toán</span><select class="in" data-slip="paymentMethod"><option value="TM/CK" ${S.paymentMethod==='TM/CK'?'selected':''}>TM/CK</option><option value="Tiền mặt" ${S.paymentMethod==='Tiền mặt'?'selected':''}>Tiền mặt</option><option value="Chuyển khoản" ${S.paymentMethod==='Chuyển khoản'?'selected':''}>Chuyển khoản</option></select></label>
@@ -47,30 +45,34 @@ function slipBody(){
   const head=isR
     ?`${date}<label class="f"><span>Nhà cung cấp</span><select class="in" data-slip="supplierId"><option value="">— Không có / tồn đầu kỳ —</option>${db.suppliers.map(s=>`<option value="${s.id}" ${s.id===S.supplierId?'selected':''}>${esc(s.name)}</option>`).join('')}</select></label>${inv}`
     :`${date}<label class="f"><span>Đối tượng nhận</span><select class="in" data-slip="targetType"><option value="retail" ${S.targetType==='retail'?'selected':''}>Khách lẻ</option><option value="project" ${S.targetType==='project'?'selected':''}>Khách hàng / Dự án</option></select></label><div id="tgt" class="contents">${targetField()}</div><label class="f"><span>Người nhận hàng</span><input class="in" data-slip="receiver" value="${esc(S.receiver)}"></label>${inv}`;
-  return `<div class="fg3">${head}${modes}<label class="f full"><span>${isR?'Ghi chú':'Mục đích / Ghi chú'}</span><input class="in" data-slip="note" value="${esc(S.note)}"></label></div>
+  const note=isR?'':'<p class="note">Chọn <b>Kho nội bộ</b> hoặc <b>Kho hóa đơn</b> cho từng dòng hàng hóa bên dưới — mỗi dòng có thể quản lý theo kho khác nhau.</p>';
+  return `<div class="fg3">${head}${modes}<label class="f full"><span>${isR?'Ghi chú':'Mục đích / Ghi chú'}</span><input class="in" data-slip="note" value="${esc(S.note)}"></label></div>${note}
   <div class="lh"><b>Danh sách hàng hóa</b><button type="button" class="btn sm" data-act="ln-add">＋ Thêm dòng</button></div><div id="lines"></div><div class="tot" id="tot"></div>`;
 }
-const availIn=(it,w,m)=>{let a=(m||stockMap())[it.id]?.[w]||0;if(S.id&&S.kind==='issue'&&S.origWhs.includes(w))a+=S.orig[it.id]||0;return a};
-function availOf(l){const it=itemOf(l.itemId);if(!it)return 0;const m=stockMap();return Math.min(...sWhs().map(w=>availIn(it,w,m)))}
+const availIn=(it,w,m,l)=>{let a=(m||stockMap())[it.id]?.[w]||0;if(l&&l.origWhs&&l.origWhs.includes(w))a+=l.origQty||0;return a};
+function lWhs(l){return S.kind==='issue'?modeWhs(l.whmode||'int'):sWhs()}
+function availOf(l){const it=itemOf(l.itemId);if(!it)return 0;const m=stockMap();return Math.min(...lWhs(l).map(w=>availIn(it,w,m,l)))}
+const WH_LINE_OPTS=[['int','Kho nội bộ','Khách lẻ, không hóa đơn'],['both','Kho hóa đơn','Dự án/công ty, có hóa đơn']];
 function renderLines(){
   const isR=S.kind==='receipt',m=stockMap();
   const head=isR
     ?'<div class="ln-head isr"><span>Hàng hóa</span><span>ĐVT</span><span>Số lượng</span><span>Đơn giá (VND)</span><span class="r">Thành tiền (VND)</span><span></span></div>'
-    :'<div class="ln-head isx"><span>Hàng hóa</span><span>ĐVT</span><span>Tồn kho</span><span>Số lượng</span><span>Đơn giá (VND)</span><span class="r">Thành tiền (VND)</span><span></span></div>';
+    :'<div class="ln-head isx"><span>Hàng hóa</span><span>ĐVT</span><span>Kho / Tồn</span><span>Số lượng</span><span>Đơn giá (VND)</span><span class="r">Thành tiền (VND)</span><span></span></div>';
   $('#lines').innerHTML=head+S.lines.map((l,i)=>{
     const it=itemOf(l.itemId),isIT=!!(it&&catOf(it.categoryId)?.isIT),tracked=isR?serialsOf(l).length>0:l.assetIds.length>0;
-    let avail=0,stkTxt='';if(it&&!isR){const per=sWhs().map(w=>[w,availIn(it,w,m)]);avail=Math.min(...per.map(x=>x[1]));stkTxt=per.map(([w,a])=>`${w===W_INV?'HĐ':'NB'}: ${fmtNum(a)}`).join(' · ')}
+    let avail=0,stkTxt='';if(it&&!isR){const per=lWhs(l).map(w=>[w,availIn(it,w,m,l)]);avail=Math.min(...per.map(x=>x[1]));stkTxt=per.map(([w,a])=>`${w===W_INV?'HĐ':'NB'}: ${fmtNum(a)}`).join(' · ')}
     const item=`<input class="in itm" data-cb="item" data-idx="${i}" autocomplete="off" placeholder="Bấm để chọn hoặc gõ mã / tên hàng…" value="${esc(it?itemLabel(it):l.itemText||'')}" data-l="${i}:itemText" aria-label="Hàng hóa">`;
     const qty=`<input class="in" type="text" inputmode="numeric" data-num="int" value="${l.qty}" data-l="${i}:qty" ${tracked?'readonly':''} aria-label="Số lượng">`;
     const del=`<button type="button" class="btn sm danger" data-act="ln-del" data-i="${i}" aria-label="Xoá dòng">✕</button>`;
     const priceIn=`<input class="in" type="text" inputmode="decimal" data-num="money" value="${fmtPrice(l.price)}" data-l="${i}:price" placeholder="Đơn giá (VND)" title="Lấy 2 số lẻ. Có thể gõ phép tính, ví dụ 500000/1.08" aria-label="Đơn giá (VND)">`;
     const amtIn=`<input class="in amt" type="text" inputmode="decimal" data-num="money" value="${fmtPrice(amt(l.qty,l.price))}" data-l="${i}:amt" placeholder="Thành tiền (VND)" title="Gõ thành tiền để tự chia ngược ra đơn giá" aria-label="Thành tiền (VND)">`;
+    const whSel=`<select class="in whsel" data-l="${i}:whmode" title="Chọn kho quản lý cho dòng này" aria-label="Kho quản lý">${WH_LINE_OPTS.map(([v,l2,d])=>`<option value="${v}" ${l.whmode===v?'selected':''} title="${esc(d)}">${l2}</option>`).join('')}</select>`;
     const main=isR
       ?`<div class="ln-main isr">${item}<span class="unit">${esc(it?.unit||'')}</span>${qty}${priceIn}${amtIn}${del}</div>`
-      :`<div class="ln-main isx">${item}<span class="unit">${esc(it?.unit||'')}</span>${it?`<span class="stk ${l.qty>avail?'bad':''}">${stkTxt}</span>`:'<span></span>'}${qty}${priceIn}${amtIn}${del}</div>`;
+      :`<div class="ln-main isx">${item}<span class="unit">${esc(it?.unit||'')}</span><div class="whbox">${whSel}${it?`<span class="stk ${l.qty>avail?'bad':''}">${stkTxt}</span>`:''}</div>${qty}${priceIn}${amtIn}${del}</div>`;
     let extra='';
     if(it&&isIT&&isR&&sInt())extra=`<div class="ser"><textarea class="in" placeholder="Serial / Service Tag – mỗi dòng một thiết bị (bỏ trống nếu không quản lý theo Serial)" data-l="${i}:serialsText">${esc(l.serialsText)}</textarea><label class="f"><span>Bảo hành (tháng)</span><input class="in" type="number" min="0" value="${esc(l.warranty)}" data-l="${i}:warranty"></label></div>`;
-    if(it&&isIT&&!isR&&sInt()){
+    if(it&&isIT&&!isR){
       const av=db.assets.filter(a=>a.itemId===it.id&&((a.status==='in_stock'&&a.warehouseId===W_INT)||(S.id&&a.issueId===S.id)));
       extra=`<details ${l.assetIds.length?'open':''}><summary>Chọn thiết bị theo Serial (${av.length} khả dụng) · <span class="asum">đã chọn ${l.assetIds.length}</span></summary><div class="alist">${av.map(a=>`<label class="chk"><input type="checkbox" data-as="${i}:${a.id}" ${l.assetIds.includes(a.id)?'checked':''}> ${esc(a.tag)} · ${esc(a.serial||'—')}</label>`).join('')||'<em class="muted">Không có thiết bị khả dụng trong Kho nội bộ.</em>'}</div></details>`;
     }
@@ -123,6 +125,9 @@ document.addEventListener('change',e=>{
     if(k==='targetType'){S.targetId='';S.targetText='';$('#tgt').innerHTML=targetField()}
     return;
   }
+  if(el.dataset.l&&el.dataset.l.endsWith(':whmode')){
+    const i=+el.dataset.l.split(':')[0];S.lines[i].whmode=el.value;renderLines();return;
+  }
   if(el.dataset.l&&el.dataset.l.endsWith(':itemText')){
     const i=+el.dataset.l.split(':')[0],l=S.lines[i],it=itemByText(el.value);
     if(it){if(it.id!==l.itemId)pickItem(i,it);el.classList.remove('bad')}
@@ -135,8 +140,8 @@ document.addEventListener('change',e=>{
     el.checked?set.add(aid):set.delete(aid);l.assetIds=[...set];if(l.assetIds.length)l.qty=l.assetIds.length;syncLineUI(+is);
   }
 });
-ACT['ln-add']=()=>{S.lines.push(newLine());renderLines()};
-ACT['ln-del']=el=>{S.lines.splice(+el.dataset.i,1);if(!S.lines.length)S.lines.push(newLine());renderLines()};
+ACT['ln-add']=()=>{S.lines.push(newLine(S.kind==='issue'?(S.targetType==='retail'?'int':'both'):undefined));renderLines()};
+ACT['ln-del']=el=>{S.lines.splice(+el.dataset.i,1);if(!S.lines.length)S.lines.push(newLine(S.kind==='issue'?(S.targetType==='retail'?'int':'both'):undefined));renderLines()};
 ACT['receipt-new']=()=>slipOpen('receipt');
 ACT['issue-new']=el=>slipOpen('issue',null,el.dataset.preset);
 ACT['slip-edit']=el=>slipOpen(el.dataset.k,el.dataset.id);
@@ -154,10 +159,10 @@ function collectLines(){
       if(new Set(serials.map(s=>s.toLowerCase())).size!==serials.length){toast(`Dòng ${i+1}: Serial bị trùng nhau.`,'error');return null}
       out.push({itemId:l.itemId,qty,price:num(l.price),serials,warranty:num(l.warranty)});
     }else{
-      const ids=sInt()?l.assetIds:[],qty=ids.length||num(l.qty);
+      const ids=l.assetIds,qty=ids.length||num(l.qty);
       if(qty!==Math.round(qty)){toast(`Dòng ${i+1}: số lượng phải là số nguyên.`,'error');return null}
       if(qty<=0){toast(`Dòng ${i+1}: số lượng phải lớn hơn 0.`,'error');return null}
-      out.push({itemId:l.itemId,qty,price:r2(num(l.price))||itemOf(l.itemId)?.price||0,assetIds:[...ids]});
+      out.push({itemId:l.itemId,qty,price:r2(num(l.price))||itemOf(l.itemId)?.price||0,assetIds:[...ids],whs:modeWhs(l.whmode||'int')});
     }
   }
   if(!out.length){toast('Phiếu chưa có hàng hóa.','error');return null}
@@ -183,16 +188,18 @@ function saveIssue(){
   if(transact(()=>{
     let tid=proj?proj.id:'';
     if(S.targetType==='retail'){let c=db.retail.find(x=>norm(x.name)===norm(tText));if(!c){c={id:uid('rt'),name:tText,phone:'',dept:'',note:''};db.retail.push(c)}tid=c.id}
-    const data={date:S.date,whs:sWhs(),targetType:S.targetType,targetId:tid,receiver:S.receiver,ref:(S.ref||'').trim(),invoiceDate:S.invoiceDate||'',vatRate:r2(numVN(S.vatRate))||0,paymentMethod:(S.paymentMethod||'').trim(),deliveryAddress:(S.deliveryAddress||'').trim(),note:S.note,lines};
+    const whsUnion=[...new Set(lines.flatMap(l=>l.whs))];
+    const data={date:S.date,whs:whsUnion,targetType:S.targetType,targetId:tid,receiver:S.receiver,ref:(S.ref||'').trim(),invoiceDate:S.invoiceDate||'',vatRate:r2(numVN(S.vatRate))||0,paymentMethod:(S.paymentMethod||'').trim(),deliveryAddress:(S.deliveryAddress||'').trim(),note:S.note,lines};
     const r=S.id?by(db.issues,S.id):null;
     if(r){revertIssueAssets(r);Object.assign(r,data);delete r.warehouseId;applyIssueAssets(r)}else _newIssue(data);
   }))done('Đã lưu phiếu xuất');
 }
 
-/* ---- đổi kho ghi nhận của một phiếu (khi chọn nhầm kho) ---- */
+/* ---- đổi kho ghi nhận nhanh cho một phiếu (chỉ áp dụng phiếu NHẬP; phiếu xuất sửa theo từng dòng qua "Sửa") ---- */
 ACT['slip-wh']=el=>{
-  const k=el.dataset.k,r=slipRec(k,el.dataset.id);if(!r)return;const cur=modeOf(slipWhs(r)),isR=k==='receipt';
-  const opts=[['both','Cả hai kho','Kho hóa đơn + Kho nội bộ'],['int','Chỉ Kho nội bộ',isR?'Hàng nhập thực tế, không hóa đơn':'Xuất hàng thực tế, không hóa đơn'],['inv','Chỉ Kho hóa đơn','Chỉ ghi sổ hóa đơn, không đổi tồn thực tế']];
+  const k=el.dataset.k;if(k!=='receipt')return;
+  const r=slipRec(k,el.dataset.id);if(!r)return;const cur=modeOf(slipWhs(r)),isR=true;
+  const opts=[['both','Cả hai kho','Kho hóa đơn + Kho nội bộ'],['int','Chỉ Kho nội bộ','Hàng nhập thực tế, không hóa đơn'],['inv','Chỉ Kho hóa đơn','Chỉ ghi sổ hóa đơn, không đổi tồn thực tế']];
   modal(`Đổi kho ghi nhận – ${r.code}`,`<form id="mf" data-submit="slip-wh" data-k="${k}" data-id="${r.id}"><p class="note">Hiện tại phiếu ghi nhận vào: <b>${esc(whsLabel(r))}</b>. Chọn kho đúng rồi bấm Lưu, tồn kho của hai kho sẽ được tính lại.</p>
     <div class="modes">${opts.map(([v,l,d])=>`<label class="mode ${v===cur?'on':''}"><span><input type="radio" name="whmode" value="${v}" ${v===cur?'checked':''}> <b>${l}</b></span><small>${d}</small></label>`).join('')}</div></form>`,{size:'mid',footer:cancelBtn+'<button class="btn primary" form="mf">Lưu</button>'});
 };
@@ -212,7 +219,7 @@ const slipRec=(k,id)=>k==='receipt'?by(db.receipts,id):by(db.issues,id);
 const slipKind=k=>k==='receipt'?'in':'out';
 ACT['slip-view']=el=>{
   const k=el.dataset.k,r=slipRec(k,el.dataset.id);if(!r)return;const w=can('write'),a=`data-k="${k}" data-id="${r.id}"`;
-  modal(r.code,slipHTML(slipKind(k),r),{size:'mid',footer:`${w?`<button class="btn danger" data-act="slip-del" ${a}>Xoá</button><button class="btn" data-act="slip-wh" ${a}>Đổi kho</button><button class="btn" data-act="slip-edit" ${a}>Sửa</button>`:''}<div class="sp"></div><button class="btn" data-act="slip-print" ${a}>🖨 In</button><button class="btn acc" data-act="slip-pdf" ${a}>Xuất PDF</button>`});
+  modal(r.code,slipHTML(slipKind(k),r),{size:'mid',footer:`${w?`<button class="btn danger" data-act="slip-del" ${a}>Xoá</button>${k==='receipt'?`<button class="btn" data-act="slip-wh" ${a}>Đổi kho</button>`:''}<button class="btn" data-act="slip-edit" ${a}>Sửa</button>`:''}<div class="sp"></div><button class="btn" data-act="slip-print" ${a}>🖨 In</button><button class="btn acc" data-act="slip-pdf" ${a}>Xuất PDF</button>`});
 };
 ACT['slip-print']=el=>{const r=slipRec(el.dataset.k,el.dataset.id);if(r)printHTML(slipHTML(slipKind(el.dataset.k),r))};
 ACT['slip-pdf']=async el=>{const r=slipRec(el.dataset.k,el.dataset.id);if(!r)return;const box=offscreen(slipHTML(slipKind(el.dataset.k),r));await pdfFromEls([box],`${r.code}.pdf`);box.remove()};
