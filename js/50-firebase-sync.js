@@ -133,7 +133,7 @@ function cloudLoginView(){
     <button class="btn primary block">${setup?'Tạo quản trị viên':'Đăng nhập'}</button>
     ${setup?'<div class="hint">Chỉ dùng cho lần đầu tiên khi hệ thống chưa có ai. Nếu đã có quản trị viên, hãy nhờ họ tạo tài khoản cho bạn.</div>':'<button type="button" class="lnk" data-act="fb-forgot">Quên mật khẩu?</button>'}
     <button type="button" class="lnk" data-act="fb-mode">${setup?'← Quay lại đăng nhập':'Thiết lập lần đầu (chưa có tài khoản quản trị)'}</button>
-    ${FIREBASE_CONFIG?'':'<button type="button" class="lnk" data-act="fb-disconnect">Ngắt kết nối Firebase (chế độ cục bộ)</button>'}</form></div>`;
+    ${FIREBASE_CONFIG?'':'<button type="button" class="lnk" data-act="fb-disconnect">Ngắt kết nối Firebase (chế độ cục bộ)</button>'}</form>${CREDIT_LINE}</div>`;
 }
 ACT['fb-mode']=()=>{ui.loginMode=ui.loginMode==='setup'?'login':'setup';cloudLoginView()};
 ACT['fb-forgot']=async()=>{

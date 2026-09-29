@@ -11,6 +11,7 @@ let PAGE=null,S=null,T=null,IMP=null;
 const F=()=>(ui.f[ui.key]??={});
 const badge=(t,x)=>`<span class="bd ${t}">${esc(x)}</span>`;
 const logoBlock=()=>typeof LOGO_DATA!=='undefined'?`<img class="lm-img" src="${LOGO_DATA}" alt="TTD Computer">`:'<div class="lm">📦</div>';
+const CREDIT_LINE='<div class="credit">🔧 Developed by Ahn Tuan (chỉ dùng trong nội bộ)</div>';
 const PAL=['#e4570e','#0f1e33','#3b7dd8','#3f9a6b','#c9a227','#8a5bd1','#d6447a','#5f7387','#17a2b8','#9aa84a'];
 
 const MENU=[

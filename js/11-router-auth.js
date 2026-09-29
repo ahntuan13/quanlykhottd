@@ -11,7 +11,7 @@ function sideHTML(){
     const active=ui.key.startsWith(g.g+'/');
     const open=ui.open[g.g]===undefined?active:ui.open[g.g];
     return `<div class="ng ${open?'open':''}"><button class="ngh" data-act="grp" data-g="${g.g}"><span class="ic">${g.icon}</span>${g.label}<span class="chev">▶</span></button><div class="ngi">${items.map(([k,l])=>`<a href="#/${g.g}/${k}" class="${ui.key===g.g+'/'+k?'on':''}">${esc(l)}${g.g==='dash'&&k==='alerts'&&al?`<span class="bubble">${al}</span>`:''}</a>`).join('')}</div></div>`;
-  }).join('')+`</nav>`;
+  }).join('')+`</nav>${CREDIT_LINE}`;
 }
 function shell(){
   $('#app').innerHTML=`<div class="app"><aside class="side" id="side"></aside><div class="main"><header class="top"><button class="burger" data-act="burger" aria-label="Menu">☰</button><div><div class="crumb" id="crumb"></div><h1 id="ptitle"></h1></div><div class="sp"></div><div class="usr"><span class="av">${esc((session.name||'?').trim().charAt(0).toUpperCase())}</span><div><b>${esc(session.name)}</b><small>${ROLES[session.role]}</small></div><button class="btn sm" data-act="chpw" title="Đổi mật khẩu">🔑</button><button class="btn sm" data-act="logout">Đăng xuất</button></div></header><main class="content" id="content"></main></div></div><div class="scrim" data-act="burger"></div>`;
@@ -47,7 +47,7 @@ window.addEventListener('hashchange',()=>render(false));
 /* ---------- đăng nhập ---------- */
 function loginView(){
   if(CLOUD)return cloudLoginView();
-  $('#app').innerHTML=`<div class="login"><form class="lcard" data-submit="login">${logoBlock()}<h1>Quản lý Kho</h1><p>Kho vật tư và IT Asset</p>${inp('username','Tên đăng nhập','',{req:1,attrs:'autocomplete="username" autofocus'})}${inp('password','Mật khẩu','',{type:'password',req:1,attrs:'autocomplete="current-password"'})}<button class="btn primary block">Đăng nhập</button><div class="hint">Tài khoản mặc định: <b>admin</b> / <b>admin123</b>. Hãy đổi mật khẩu sau khi đăng nhập.</div><button type="button" class="lnk" data-act="fb-config">Kết nối Firebase để dùng chung dữ liệu…</button></form></div>`;
+  $('#app').innerHTML=`<div class="login"><form class="lcard" data-submit="login">${logoBlock()}<h1>Quản lý Kho</h1><p>Kho vật tư và IT Asset</p>${inp('username','Tên đăng nhập','',{req:1,attrs:'autocomplete="username" autofocus'})}${inp('password','Mật khẩu','',{type:'password',req:1,attrs:'autocomplete="current-password"'})}<button class="btn primary block">Đăng nhập</button><div class="hint">Tài khoản mặc định: <b>admin</b> / <b>admin123</b>. Hãy đổi mật khẩu sau khi đăng nhập.</div><button type="button" class="lnk" data-act="fb-config">Kết nối Firebase để dùng chung dữ liệu…</button></form>${CREDIT_LINE}</div>`;
 }
 SUB.login=form=>{
   const d=fd(form),u=db.users.find(x=>x.username.toLowerCase()===d.username.trim().toLowerCase());
