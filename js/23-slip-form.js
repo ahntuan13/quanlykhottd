@@ -21,7 +21,7 @@ function slipOpen(kind,id,preset){
   if(kind==='receipt')S={kind,id:id||null,date:rec?.date||todayStr(),mode,supplierId:rec?.supplierId||'',supplierText:rec&&rec.supplierId?nm(db.suppliers,rec.supplierId):'',ref:rec?.ref||'',invoiceDate:rec?.invoiceDate||'',
     vatRate:rec?(rec.vatRate??0):dv,paymentMethod:rec?(rec.paymentMethod||'TM/CK'):'TM/CK',deliveryAddress:rec?(rec.deliveryAddress||''):(db.company.address||''),note:rec?.note||'',
     lines:rec?rec.lines.map(l=>({itemId:l.itemId,itemText:'',qty:l.qty,price:l.price||0,serialsText:(l.serials||[]).join('\n'),warranty:l.warranty||'',assetIds:[]})):[newLine()]};
-  else{const dw=preset==='retail'?'int':'both';
+  else{const dw=preset==='retail'?'int':'inv';
     S={kind,id:id||null,date:rec?.date||todayStr(),targetType:rec?.targetType||preset||'retail',targetId:rec?.targetId||'',targetText:rec?targetLabel(rec.targetType,rec.targetId):'',receiver:rec?.receiver||'',ref:rec?.ref||'',invoiceDate:rec?.invoiceDate||'',
     vatRate:rec?(rec.vatRate??0):dv,paymentMethod:rec?(rec.paymentMethod||'TM/CK'):'TM/CK',deliveryAddress:rec?(rec.deliveryAddress||''):'',note:rec?.note||'',
     lines:rec?rec.lines.map(l=>({itemId:l.itemId,itemText:'',qty:l.qty,price:l.price||0,serialsText:'',warranty:'',assetIds:[...(l.assetIds||[])],whmode:lineMode(l),origWhs:[...lineWhs(l)],origQty:+l.qty||0})):[newLine(dw)]}}
@@ -52,7 +52,7 @@ function slipBody(){
 const availIn=(it,w,m,l)=>{let a=(m||stockMap())[it.id]?.[w]||0;if(l&&l.origWhs&&l.origWhs.includes(w))a+=l.origQty||0;return a};
 function lWhs(l){return S.kind==='issue'?modeWhs(l.whmode||'int'):sWhs()}
 function availOf(l){const it=itemOf(l.itemId);if(!it)return 0;const m=stockMap();return Math.min(...lWhs(l).map(w=>availIn(it,w,m,l)))}
-const WH_LINE_OPTS=[['int','Kho nội bộ','Khách lẻ, không hóa đơn'],['both','Kho hóa đơn','Dự án/công ty, có hóa đơn']];
+const WH_LINE_OPTS=[['int','Kho nội bộ','Khách lẻ, không hóa đơn'],['inv','Kho hóa đơn','Dự án/công ty, có hóa đơn – trừ tồn Kho hóa đơn, không liên quan Kho nội bộ']];
 function renderLines(){
   const isR=S.kind==='receipt',m=stockMap();
   const head=isR
@@ -140,8 +140,8 @@ document.addEventListener('change',e=>{
     el.checked?set.add(aid):set.delete(aid);l.assetIds=[...set];if(l.assetIds.length)l.qty=l.assetIds.length;syncLineUI(+is);
   }
 });
-ACT['ln-add']=()=>{S.lines.push(newLine(S.kind==='issue'?(S.targetType==='retail'?'int':'both'):undefined));renderLines()};
-ACT['ln-del']=el=>{S.lines.splice(+el.dataset.i,1);if(!S.lines.length)S.lines.push(newLine(S.kind==='issue'?(S.targetType==='retail'?'int':'both'):undefined));renderLines()};
+ACT['ln-add']=()=>{S.lines.push(newLine(S.kind==='issue'?(S.targetType==='retail'?'int':'inv'):undefined));renderLines()};
+ACT['ln-del']=el=>{S.lines.splice(+el.dataset.i,1);if(!S.lines.length)S.lines.push(newLine(S.kind==='issue'?(S.targetType==='retail'?'int':'inv'):undefined));renderLines()};
 ACT['receipt-new']=()=>slipOpen('receipt');
 ACT['issue-new']=el=>slipOpen('issue',null,el.dataset.preset);
 ACT['slip-edit']=el=>slipOpen(el.dataset.k,el.dataset.id);

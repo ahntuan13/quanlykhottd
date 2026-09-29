@@ -64,8 +64,10 @@ Muốn chạy chế độ cục bộ: đặt `const FIREBASE_CONFIG = null;` tro
 ## Mô hình 2 kho
 - **Kho nội bộ** = tồn hàng thực tế (cảnh báo hết hàng, giá trị tồn, kiểm kê, thiết bị IT theo Serial).
 - **Kho hóa đơn** = số lượng theo hóa đơn nhập đầu vào / xuất đầu ra.
-- Mỗi phiếu chọn **Ghi nhận vào kho**: cả hai kho / chỉ Kho nội bộ / chỉ Kho hóa đơn.
-- Tồn kho có nút **→ HĐ** (từng mặt hàng) và **Chuyển tất cả sang Kho hóa đơn**.
+- **Danh sách hàng hóa** (Kho → Hàng hóa) là **kho chính** – mọi nơi chọn hàng hóa trong hệ thống (phiếu nhập, phiếu xuất, kiểm kê, chuyển kho…) đều lấy từ danh sách này. Cột **Tồn** ở trang này là **tổng của cả 2 kho** (Kho nội bộ + Kho hóa đơn).
+- Phiếu nhập chọn **Ghi nhận vào kho** cho cả phiếu: cả hai kho / chỉ Kho nội bộ / chỉ Kho hóa đơn.
+- Phiếu xuất chọn kho **theo từng dòng hàng hóa**: mỗi dòng có thể là "Kho nội bộ" (khách lẻ, không hóa đơn) hoặc "Kho hóa đơn" (dự án/công ty, có hóa đơn). Chọn dòng nào thì dòng đó chỉ kiểm tra và trừ tồn đúng kho đó – **không đòi hỏi kho còn lại cũng phải đủ hàng**.
+- Tồn kho có nút **⇄ Chuyển kho** (từng mặt hàng, hoặc theo lô) để chuyển tồn giữa 2 kho khi lỡ nhập/xuất nhầm.
 - Số lượng luôn là số nguyên; tiền tệ là VND.
 
 ## Đổi logo

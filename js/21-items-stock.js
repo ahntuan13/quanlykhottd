@@ -7,7 +7,7 @@
    ===================================================================== */
 const itemUsed=id=>db.receipts.some(r=>r.lines.some(l=>l.itemId===id))||db.issues.some(r=>r.lines.some(l=>l.itemId===id))||db.adjustments.some(a=>a.itemId===id)||db.stocktakes.some(s=>s.lines.some(l=>l.itemId===id))||db.assets.some(a=>a.itemId===id);
 PAGES['wh/items']={t:'Danh sách hàng hóa',
-  head(){const w=can('write');return `<div class="bar">${fSearch('Tìm mã / tên hàng…')}${fSel('cat','Danh mục',catOpts())}<div class="sp"></div>${w?'<button class="btn" data-act="tpl-items">Mẫu Excel</button><button class="btn" data-act="imp-items">⬆ Nhập từ Excel</button>':''}<button class="btn" data-act="export" data-name="hang-hoa">⬇ Excel</button>${w?'<button class="btn acc" data-act="item-new">＋ Thêm hàng hóa</button>':''}</div><p class="note">Cột <b>Tồn</b> là tồn Kho nội bộ (thực tế); <b>Trạng thái</b> tính theo tồn <b>Kho hóa đơn</b>.</p>`},
+  head(){const w=can('write');return `<div class="bar">${fSearch('Tìm mã / tên hàng…')}${fSel('cat','Danh mục',catOpts())}<div class="sp"></div>${w?'<button class="btn" data-act="tpl-items">Mẫu Excel</button><button class="btn" data-act="imp-items">⬆ Nhập từ Excel</button>':''}<button class="btn" data-act="export" data-name="hang-hoa">⬇ Excel</button>${w?'<button class="btn acc" data-act="item-new">＋ Thêm hàng hóa</button>':''}</div><p class="note">Đây là <b>kho chính</b> – mọi nơi chọn hàng hóa trong hệ thống đều lấy từ danh sách này. Cột <b>Tồn</b> là tổng tồn Kho nội bộ + Kho hóa đơn; <b>Trạng thái</b> tính theo tồn <b>Kho hóa đơn</b>.</p>`},
   tbl(){
     const f=F(),q=(f.q||'').toLowerCase(),m=stockMap(),w=can('write');
     const rows=db.items.filter(i=>(!f.cat||i.categoryId===f.cat)&&(!q||(i.sku+' '+i.name).toLowerCase().includes(q))).sort((a,b)=>a.sku.localeCompare(b.sku));
@@ -15,7 +15,7 @@ PAGES['wh/items']={t:'Danh sách hàng hóa',
       {h:'Mã hàng',f:r=>`<b>${esc(r.sku)}</b>`,x:r=>r.sku},
       {h:'Tên hàng hóa',f:r=>`${esc(r.name)}${catOf(r.categoryId)?.isIT?' '+badge('info','IT'):''}`,x:r=>r.name},
       {h:'Danh mục',f:r=>esc(nm(db.categories,r.categoryId))},{h:'ĐVT',f:r=>esc(r.unit)},
-      nc('Tồn',r=>totalOf(m,r.id)),nc('Tối thiểu',r=>r.minStock||0),nc('Đơn giá (VND)',r=>r.price||0,fmtMoney),
+      nc('Tồn',r=>totalOf(m,r.id)+invOf(m,r.id)),nc('Đơn giá (VND)',r=>r.price||0,fmtMoney),
       {h:'Trạng thái',f:r=>badge(...itemStatus(r,invOf(m,r.id))),x:r=>itemStatus(r,invOf(m,r.id))[1]},
       {h:'Kho bán gần nhất',f:r=>{const w=lastSaleWh(r.id);return w?badge(w.includes(W_INV)?'info':'ok',w.includes(W_INV)?'Kho hóa đơn':'Kho nội bộ'):'<span class="muted">Chưa bán</span>'},x:r=>{const w=lastSaleWh(r.id);return w?(w.includes(W_INV)?'Kho hóa đơn':'Kho nội bộ'):''}},
       actCol(r=>w?`<button class="btn sm" data-act="item-edit" data-id="${r.id}">Sửa</button> <button class="btn sm danger" data-act="item-del" data-id="${r.id}">Xoá</button>`:'')
