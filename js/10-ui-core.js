@@ -69,6 +69,49 @@ function onFilter(e){
 document.addEventListener('input',onFilter);document.addEventListener('change',onFilter);
 function refreshTbl(){destroyCharts();const t=$('#tbl');if(PAGE&&PAGE.tbl&&t){t.innerHTML=PAGE.tbl();PAGE.tm&&PAGE.tm()}else rerender()}
 
+/* ---------- điều hướng bàn phím trong form: Enter / mũi tên chuyển sang ô kế tiếp ---------- */
+const NAV_SEL='input:not([type=hidden]):not([type=checkbox]):not([type=radio]):not([disabled]):not([readonly]), select:not([disabled]), textarea:not([disabled])';
+const NAV_TEXTLIKE=['','text','search','tel','password'];
+function navFocusables(scope){
+  return Array.from(scope.querySelectorAll(NAV_SEL)).filter(x=>{
+    if(x.hidden||x.closest('[hidden]'))return false;
+    const det=x.closest('details');
+    if(det&&!det.open&&!x.closest('summary'))return false; // trong <details> đang đóng (VD: chọn Serial) thì bỏ qua
+    return true;
+  });
+}
+const navScope=el=>el.closest('.mb')||el.closest('form')||el.closest('#app')||document;
+function navMove(el,dir){
+  const list=navFocusables(navScope(el)),idx=list.indexOf(el);
+  if(idx<0)return false;
+  const t=list[idx+dir];if(!t)return false;
+  t.focus();return true;
+}
+document.addEventListener('keydown',e=>{
+  const el=e.target;if(!el||!el.matches)return;
+  const tag=el.tagName;if(tag!=='INPUT'&&tag!=='SELECT'&&tag!=='TEXTAREA')return;
+  if(el.type==='checkbox'||el.type==='radio')return;
+  /* để combobox (gợi ý hàng hóa/khách hàng/NCC) tự xử lý Enter và mũi tên lên/xuống khi đang mở */
+  if(el.dataset&&el.dataset.cb&&typeof cbState!=='undefined'&&cbState&&cbState.el===el&&(e.key==='Enter'||e.key==='ArrowUp'||e.key==='ArrowDown'))return;
+  if(e.key==='Enter'){
+    if(tag==='TEXTAREA')return; // giữ nguyên hành vi xuống dòng trong ô ghi chú
+    e.preventDefault();navMove(el,1);return;
+  }
+  if(e.key==='ArrowDown'||e.key==='ArrowUp'){
+    if(tag==='TEXTAREA'||tag==='SELECT')return; // giữ hành vi mặc định (cuộn / đổi lựa chọn)
+    e.preventDefault();navMove(el,e.key==='ArrowDown'?1:-1);return;
+  }
+  if(e.key==='ArrowLeft'||e.key==='ArrowRight'){
+    if(tag==='TEXTAREA'||tag==='SELECT')return;
+    if(NAV_TEXTLIKE.includes(el.type||'')){
+      const atStart=el.selectionStart===0&&el.selectionEnd===0,atEnd=el.selectionStart===el.value.length&&el.selectionEnd===el.value.length;
+      if(e.key==='ArrowLeft'&&!atStart)return;
+      if(e.key==='ArrowRight'&&!atEnd)return;
+    }
+    e.preventDefault();navMove(el,e.key==='ArrowRight'?1:-1);
+  }
+});
+
 /* ---------- bảng ---------- */
 const nc=(h,fn,fmt=fmtNum)=>({h,c:'num',f:r=>fmt(fn(r)),x:fmt===fmtMoney?(r=>r2(fn(r))):fn});
 function table(cols,rows,{empty='Chưa có dữ liệu.',limit=1000,foot=''}={}){

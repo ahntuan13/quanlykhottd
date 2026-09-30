@@ -37,16 +37,22 @@ function cbRender(){
 }
 function cbClose(){cbState=null;const p=document.getElementById('cb-pop');if(p)p.hidden=true}
 function cbPick(i){
-  const s=cbState;if(!s)return;const o=s.list[i];if(!o)return;const el=s.el;
+  const s=cbState;if(!s)return;const o=s.list[i];if(!o)return;const el=s.el,idx=el.dataset.idx,kind=s.kind;
   el.value=o.label;cbClose();
-  if(s.kind==='item'){const it=itemOf(o.id);if(it&&S)pickItem(+el.dataset.idx,it)}
-  else if(s.kind==='supplier'){if(S){S.supplierText=o.label;S.supplierId=o.id}}
+  if(kind==='item'){
+    const it=itemOf(o.id);if(it&&S)pickItem(+idx,it);
+    /* pickItem() đã render lại dòng (renderLines) nên el cũ không còn trong DOM – lấy lại ô hiện tại theo cùng dòng rồi nhảy sang ô kế tiếp */
+    const again=idx!==undefined?document.querySelector(`[data-l="${idx}:itemText"]`):null;
+    if(again)navMove(again,1);
+  }
+  else if(kind==='supplier'){if(S){S.supplierText=o.label;S.supplierId=o.id}navMove(el,1)}
   else if(S){
     S.targetText=o.label;S.targetId=o.id;
-    if(s.kind==='project'&&!S.deliveryAddress){
+    if(kind==='project'&&!S.deliveryAddress){
       const p=by(db.projects,o.id);
       if(p&&p.address){S.deliveryAddress=p.address;const da=document.querySelector('[data-slip=deliveryAddress]');if(da)da.value=p.address}
     }
+    navMove(el,1);
   }
 }
 document.addEventListener('focusin',e=>{const el=e.target;if(el.dataset&&el.dataset.cb&&!(cbState&&cbState.el===el))cbOpen(el)});
