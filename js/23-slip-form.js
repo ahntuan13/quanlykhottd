@@ -82,7 +82,7 @@ function renderLines(){
 }
 function renderTotals(){
   const q=S.lines.reduce((a,l)=>a+(+l.qty||0),0),v=S.lines.reduce((a,l)=>a+amt(l.qty,l.price),0);
-  const vat=r2(numVN(S.vatRate)||0),vatAmt=r2(v*vat/100),grand=vat>0?Math.round((v+vatAmt)/1000)*1000:v;
+  const vat=r2(numVN(S.vatRate)||0),vatAmt=r2(v*vat/100),grand=vat>0?Math.round(v+vatAmt):v;
   const t=$('#tot');if(t)t.innerHTML=`<span>Tổng số lượng: ${fmtNum(q)}</span><span>Tiền hàng: ${fmtMoney(v)} VND</span>${vat>0?`<span>Sau thuế (${fmtPrice(vat)}%): ${fmtMoney(grand)} VND</span>`:''}`;
 }
 function syncLineUI(i){
